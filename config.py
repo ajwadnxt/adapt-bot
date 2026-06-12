@@ -11,9 +11,9 @@ PREFIX: str = os.getenv("BOT_PREFIX", "!")
 GUILD_ID: int | None = int(gid) if (gid := os.getenv("GUILD_ID")) else None
 
 #BotAppearance
-BOT_NAME = "MyBot"
+BOT_NAME = "ADAPT v0.1 alpha"
 BOT_COLOR = "#00a9ff"
-BOT_VERSION = "1.0.0"
+BOT_VERSION = "0.0.1"
 
 #FeatureFlags
 ENABLE_MODERATION = True
