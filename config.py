@@ -16,9 +16,9 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 GUILD_ID: int | None = int(gid) if (gid := os.getenv("GUILD_ID")) else None
 
 #BotAppearance
-BOT_NAME = "ADAPT v0.1 alpha"
+BOT_NAME = "ADAPT"
 BOT_COLOR = "#00a9ff"
-BOT_VERSION = "0.0.1"
+BOT_VERSION = "0.0.1a Alpha"
 
 #FeatureFlags
 ENABLE_MODERATION = True
