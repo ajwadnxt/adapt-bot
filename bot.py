@@ -3,6 +3,7 @@ import logging
 import discord
 from discord.ext import commands
 import config
+from database.db import create_pool, close_pool
 
 #Logging
 logging.basicConfig(
@@ -14,9 +15,8 @@ log = logging.getLogger("bot")
 
 #Intents
 intents = discord.Intents.default()
-intents.message_content = True   # Required for prefix commands + reading messages
-intents.members = True           # Required for member-related mod actions
-
+intents.message_content = True
+intents.members = True
 
 #BotSubclass
 class MyBot(commands.Bot):
@@ -27,9 +27,19 @@ class MyBot(commands.Bot):
             help_command=None,
         )
 
+    #ThingsToDoBeforeTheBotConnects
     async def setup_hook(self):
+        if config.DATABASE_URL:
+            self.db_pool = await create_pool()
+        else:
+            log.warning("⚠️  DATABASE_URL not set — running without database")
+            self.db_pool = None
         await self._load_cogs()
         await self._sync_commands()
+
+    async def close(self):
+        await close_pool()
+        await super().close()
 
     async def _load_cogs(self):
         cogs = ["cogs.general"]
@@ -70,7 +80,7 @@ class MyBot(commands.Bot):
         log.error(f"Prefix command error in {ctx.command}: {error}")
 
 
-#EntryPoint
+#Entry Point
 async def main():
     if not config.TOKEN:
         log.critical("DISCORD_TOKEN is not set. Check your .env file.")
