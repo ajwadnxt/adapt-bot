@@ -42,7 +42,7 @@ class Moderation(commands.Cog):
 
 
 
-    @app_commands.command(name="ban", description="Ban a member from the server.")
+@app_commands.command(name="ban", description="Ban a member from the server.")
     @app_commands.describe(member="The member to ban", reason="Reason for the ban")
     @app_commands.checks.has_permissions(ban_members=True)
     async def ban(
