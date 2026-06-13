@@ -7,6 +7,11 @@ load_dotenv()
 TOKEN: str = os.getenv("DISCORD_TOKEN", "")
 PREFIX: str = os.getenv("BOT_PREFIX", "!")
 
+
+#Database
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+
 #InstantSyncOnlyForTesting
 GUILD_ID: int | None = int(gid) if (gid := os.getenv("GUILD_ID")) else None
 
