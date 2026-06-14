@@ -31,3 +31,4 @@ Thumbs.db
 *.db
 *.sqlite3
 *.json
+*.lock

@@ -282,6 +282,271 @@ class TicTacToeView(discord.ui.View):
         return None
 
 
+# ── Rock Paper Scissors Game ──────────────────────────────────────────────────
+
+class RPSView(discord.ui.View):
+    def __init__(self, challenger: discord.Member, opponent: discord.Member):
+        super().__init__(timeout=60)
+        self.challenger = challenger
+        self.opponent = opponent
+        self.choices = {challenger.id: None, opponent.id: None}
+
+    @discord.ui.button(label="Rock 🪨", style=discord.ButtonStyle.primary)
+    async def rock(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.process_choice(interaction, "rock")
+
+    @discord.ui.button(label="Paper 📄", style=discord.ButtonStyle.success)
+    async def paper(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.process_choice(interaction, "paper")
+
+    @discord.ui.button(label="Scissors ✂️", style=discord.ButtonStyle.danger)
+    async def scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.process_choice(interaction, "scissors")
+
+    async def process_choice(self, interaction: discord.Interaction, choice: str):
+        user_id = interaction.user.id
+        if user_id not in self.choices:
+            await interaction.response.send_message("You are not part of this game!", ephemeral=True)
+            return
+
+        if self.choices[user_id] is not None:
+            await interaction.response.send_message("You have already made your choice!", ephemeral=True)
+            return
+
+        self.choices[user_id] = choice
+        await interaction.response.send_message(f"You chose **{choice.title()}**!", ephemeral=True)
+
+        if all(c is not None for c in self.choices.values()):
+            self.stop()
+            for item in self.children:
+                if isinstance(item, discord.ui.Button):
+                    item.disabled = True
+            
+            c_choice = self.choices[self.challenger.id]
+            o_choice = self.choices[self.opponent.id]
+            
+            winner = None
+            if c_choice == o_choice:
+                result_str = f"It's a tie! Both chose **{c_choice.title()}**."
+                embed_func = info
+            elif (c_choice == "rock" and o_choice == "scissors") or \
+                 (c_choice == "paper" and o_choice == "rock") or \
+                 (c_choice == "scissors" and o_choice == "paper"):
+                winner = self.challenger
+                result_str = f"🎉 **{self.challenger.mention}** wins! **{c_choice.title()}** beats **{o_choice.title()}**."
+                embed_func = success
+            else:
+                winner = self.opponent
+                result_str = f"🎉 **{self.opponent.mention}** wins! **{o_choice.title()}** beats **{c_choice.title()}**."
+                embed_func = success
+
+            embed = embed_func(
+                "🪨 Rock Paper Scissors Result ✂️",
+                f"{self.challenger.mention} chose **{c_choice.title()}**\n"
+                f"{self.opponent.mention} chose **{o_choice.title()}**\n\n"
+                f"{result_str}"
+            )
+            await interaction.message.edit(embed=embed, view=self)
+
+
+# ── Blackjack Game ────────────────────────────────────────────────────────────
+
+class BlackjackView(discord.ui.View):
+    def __init__(self, player: discord.Member):
+        super().__init__(timeout=60)
+        self.player = player
+        self.deck = self.create_deck()
+        self.player_hand = [self.draw_card(), self.draw_card()]
+        self.dealer_hand = [self.draw_card(), self.draw_card()]
+        self.game_over = False
+
+    def create_deck(self):
+        suits = ["♥️", "♦️", "♣️", "♠️"]
+        values = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+        deck = [(v, s) for v in values for s in suits]
+        random.shuffle(deck)
+        return deck
+
+    def draw_card(self):
+        return self.deck.pop()
+
+    def get_hand_value(self, hand):
+        value = 0
+        aces = 0
+        for card, suit in hand:
+            if card in ["J", "Q", "K"]:
+                value += 10
+            elif card == "A":
+                value += 11
+                aces += 1
+            else:
+                value += int(card)
+        while value > 21 and aces > 0:
+            value -= 10
+            aces -= 1
+        return value
+
+    def format_hand(self, hand, hide_first=False):
+        if hide_first:
+            return f"❓, " + ", ".join(f"`{c}{s}`" for c, s in hand[1:])
+        return ", ".join(f"`{c}{s}`" for c, s in hand)
+
+    def get_embed(self, title="🃏 Blackjack", color=None):
+        if color is None:
+            color = config.BOT_COLOR
+        embed = discord.Embed(title=title, color=color)
+        
+        player_val = self.get_hand_value(self.player_hand)
+        if self.game_over:
+            dealer_val = self.get_hand_value(self.dealer_hand)
+            embed.add_field(name=f"🤖 Dealer's Hand ({dealer_val})", value=self.format_hand(self.dealer_hand), inline=False)
+        else:
+            embed.add_field(name="🤖 Dealer's Hand", value=self.format_hand(self.dealer_hand, hide_first=True), inline=False)
+            
+        embed.add_field(name=f"👤 Your Hand ({player_val})", value=self.format_hand(self.player_hand), inline=False)
+        return embed
+
+    @discord.ui.button(label="Hit 🟢", style=discord.ButtonStyle.success)
+    async def hit(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.player.id:
+            await interaction.response.send_message("This is not your game!", ephemeral=True)
+            return
+
+        self.player_hand.append(self.draw_card())
+        val = self.get_hand_value(self.player_hand)
+        
+        if val > 21:
+            self.game_over = True
+            self.end_game()
+            embed = self.get_embed("💥 Busted! You Lose!", color=discord.Color.red())
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="Stand 🔴", style=discord.ButtonStyle.danger)
+    async def stand(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.player.id:
+            await interaction.response.send_message("This is not your game!", ephemeral=True)
+            return
+
+        self.game_over = True
+        
+        while self.get_hand_value(self.dealer_hand) < 17:
+            self.dealer_hand.append(self.draw_card())
+            
+        p_val = self.get_hand_value(self.player_hand)
+        d_val = self.get_hand_value(self.dealer_hand)
+        
+        self.end_game()
+        
+        if d_val > 21:
+            embed = self.get_embed("🎉 Dealer Busted! You Win!", color=discord.Color.green())
+        elif p_val > d_val:
+            embed = self.get_embed("🎉 You Win!", color=discord.Color.green())
+        elif p_val < d_val:
+            embed = self.get_embed("❌ You Lose!", color=discord.Color.red())
+        else:
+            embed = self.get_embed("👔 It's a Push (Tie)!", color=discord.Color.gold())
+            
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def end_game(self):
+        self.stop()
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+
+
+# ── Minesweeper Game ──────────────────────────────────────────────────────────
+
+class MinesweeperButton(discord.ui.Button):
+    def __init__(self, x: int, y: int):
+        super().__init__(style=discord.ButtonStyle.secondary, label="❓", row=y)
+        self.x = x
+        self.y = y
+
+    async def callback(self, interaction: discord.Interaction):
+        assert self.view is not None
+        view: MinesweeperView = self.view
+        
+        if interaction.user.id != view.player.id:
+            await interaction.response.send_message("This is not your game!", ephemeral=True)
+            return
+
+        if (self.x, self.y) in view.mines:
+            view.game_over = True
+            for child in view.children:
+                if isinstance(child, MinesweeperButton):
+                    child.disabled = True
+                    if (child.x, child.y) in view.mines:
+                        child.label = "💥"
+                        child.style = discord.ButtonStyle.danger
+            
+            embed = error(
+                "💥 Boom! Game Over!",
+                f"You stepped on a mine at `({self.x + 1}, {self.y + 1})`!"
+            )
+            await interaction.response.edit_message(embed=embed, view=view)
+            view.stop()
+        else:
+            view.revealed.add((self.x, self.y))
+            adjacent = view.count_adjacent(self.x, self.y)
+            self.disabled = True
+            self.style = discord.ButtonStyle.success if adjacent == 0 else discord.ButtonStyle.primary
+            self.label = str(adjacent) if adjacent > 0 else "⬜"
+            
+            total_safe = 25 - len(view.mines)
+            if len(view.revealed) == total_safe:
+                view.game_over = True
+                for child in view.children:
+                    if isinstance(child, MinesweeperButton):
+                        child.disabled = True
+                        if (child.x, child.y) in view.mines:
+                            child.label = "💣"
+                            child.style = discord.ButtonStyle.danger
+                embed = success(
+                    "🎉 Victory!",
+                    "You successfully cleared the minefield without hitting any mines!"
+                )
+                await interaction.response.edit_message(embed=embed, view=view)
+                view.stop()
+            else:
+                embed = info(
+                    "💣 Minesweeper",
+                    f"Cleared: **{len(view.revealed)} / {total_safe}** safe tiles."
+                )
+                await interaction.response.edit_message(embed=embed, view=view)
+
+class MinesweeperView(discord.ui.View):
+    def __init__(self, player: discord.Member, mine_count: int = 4):
+        super().__init__(timeout=180)
+        self.player = player
+        self.mines = set()
+        self.revealed = set()
+        self.game_over = False
+        
+        coords = [(x, y) for x in range(5) for y in range(5)]
+        random.shuffle(coords)
+        for i in range(mine_count):
+            self.mines.add(coords[i])
+            
+        for y in range(5):
+            for x in range(5):
+                self.add_item(MinesweeperButton(x, y))
+
+    def count_adjacent(self, x: int, y: int) -> int:
+        count = 0
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < 5 and 0 <= ny < 5:
+                    if (nx, ny) in self.mines:
+                        count += 1
+        return count
+
+
 # ── Games Cog Class ──────────────────────────────────────────────────────────
 
 class Games(commands.Cog):
@@ -358,6 +623,61 @@ class Games(commands.Cog):
             f"It is **{interaction.user.mention}**'s turn (X).",
             view=view,
         )
+
+    # ── Rock Paper Scissors Command ───────────────────────────────────────────
+    @app_commands.command(
+        name="rps", description="Challenge another user to a game of Rock Paper Scissors."
+    )
+    @app_commands.describe(opponent="The member you want to challenge")
+    async def rps(self, interaction: discord.Interaction, opponent: discord.Member):
+        if opponent.bot:
+            await interaction.response.send_message(
+                "You cannot play against a bot!", ephemeral=True
+            )
+            return
+        if opponent == interaction.user:
+            await interaction.response.send_message(
+                "You cannot play against yourself!", ephemeral=True
+            )
+            return
+
+        view = RPSView(interaction.user, opponent)
+        embed = info(
+            "🪨 Rock Paper Scissors Challenge! ✂️",
+            f"**{interaction.user.mention}** has challenged **{opponent.mention}** to Rock Paper Scissors!\n\n"
+            "Both players must click one of the buttons below to choose."
+        )
+        await interaction.response.send_message(embed=embed, view=view)
+
+    # ── Blackjack Command ──────────────────────────────────────────────────────
+    @app_commands.command(
+        name="blackjack", description="Play a game of Blackjack against the dealer."
+    )
+    async def blackjack(self, interaction: discord.Interaction):
+        view = BlackjackView(interaction.user)
+        embed = view.get_embed()
+        await interaction.response.send_message(embed=embed, view=view)
+
+    # ── Minesweeper Command ────────────────────────────────────────────────────
+    @app_commands.command(
+        name="minesweeper", description="Play a game of Minesweeper on a 5x5 grid."
+    )
+    @app_commands.describe(mines="Number of mines in the grid (default is 4, max is 8)")
+    async def minesweeper(self, interaction: discord.Interaction, mines: int = 4):
+        if mines < 1 or mines > 8:
+            await interaction.response.send_message(
+                "Mine count must be between 1 and 8.", ephemeral=True
+            )
+            return
+
+        view = MinesweeperView(interaction.user, mines)
+        total_safe = 25 - mines
+        embed = info(
+            "💣 Minesweeper",
+            f"Click on the buttons to clear the minefield. Avoid the **{mines}** hidden mines!\n\n"
+            f"Cleared: **0 / {total_safe}** safe tiles."
+        )
+        await interaction.response.send_message(embed=embed, view=view)
 
 
 async def setup(bot: commands.Bot):
