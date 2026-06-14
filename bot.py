@@ -67,14 +67,14 @@ class AdaptBot(commands.Bot):
                 log.error(f"❌  Failed to load {cog}: {e}")
 
     async def _sync_commands(self):
-        if config.GUILD_ID:
-            guild = discord.Object(id=config.GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            log.info(f"⚡  Commands synced to guild {config.GUILD_ID}")
-        # Uncomment for production global sync:
-        # else:
-        #     await self.tree.sync()
+    if config.GUILD_ID:
+        guild = discord.Object(id=config.GUILD_ID)
+        self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
+        log.info(f"⚡  Commands synced to guild {config.GUILD_ID}")
+    #else:
+        #await self.tree.sync()
+        #log.info("🌐  Commands synced globally")
 
     async def on_ready(self):
         log.info(f"🤖  Logged in as {self.user} (ID: {self.user.id})")
