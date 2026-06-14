@@ -30,10 +30,41 @@ def get_pool() -> asyncpg.Pool:
 #GuildSettings
 
 async def get_guild(guild_id: int) -> asyncpg.Record | None:
+    if _pool is None:
+        return None
     return await get_pool().fetchrow("SELECT * FROM guild_settings WHERE guild_id = $1", guild_id)
 
-async def ensure_guild(guild_id: int) -> asyncpg.Record:
+async def ensure_guild(guild_id: int) -> asyncpg.Record | dict:
     """Get guild settings, creating a default row if it doesn't exist."""
+    if _pool is None:
+        return {
+            "guild_id": guild_id,
+            "prefix": config.PREFIX,
+            "welcome_channel_id": None,
+            "leave_channel_id": None,
+            "welcome_embed": True,
+            "welcome_message": "Welcome {user} to the server!",
+            "leave_message": "{name} has left the server.",
+            "mod_log_channel_id": None,
+            "mute_role_id": None,
+            "log_channel_id": None,
+            "xp_cooldown": 60,
+            "min_xp": 15,
+            "max_xp": 25,
+            "level_up_message": "GG {user}, you level up to level {level}!",
+            "level_up_channel_id": None,
+            "currency_name": "Coins",
+            "currency_symbol": "🪙",
+            "daily_amount": 100,
+            "ticket_category_id": None,
+            "ticket_support_role_id": None,
+            "link_whitelisted_channels": [],
+            "automod_invites": False,
+            "automod_links": False,
+            "automod_spam": False,
+            "automod_mentions": False,
+            "auto_role_ids": [],
+        }
     row = await get_guild(guild_id)
     if not row:
         await get_pool().execute(
@@ -44,6 +75,8 @@ async def ensure_guild(guild_id: int) -> asyncpg.Record:
 
 async def set_guild(guild_id: int, **kwargs) -> None:
     """Update one or more guild_settings columns."""
+    if _pool is None:
+        return
     if not kwargs:
         return
     cols = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs))
@@ -51,6 +84,7 @@ async def set_guild(guild_id: int, **kwargs) -> None:
         f"UPDATE guild_settings SET {cols} WHERE guild_id = $1",
         guild_id, *kwargs.values()
     )
+
 
 async def get_prefix(guild_id: int) -> str:
     if _pool is None:
