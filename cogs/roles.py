@@ -99,7 +99,11 @@ class Roles(commands.Cog):
         channel="Channel to send the panel",
         title="Panel title",
         description="Panel description",
-        roles="Roles to include (mention up to 5, e.g. @Role1 @Role2)",
+        role1="First role",
+        role2="Second role",
+        role3="Third role",
+        role4="Fourth role",
+        role5="Fifth role",
     )
     @is_admin()
     async def role_panel(
