@@ -6,7 +6,7 @@ from database import db
 
 
 def is_mod():
-    return app_commands.checks.has_permissions(manage_members=True)
+    return app_commands.checks.has_permissions(moderate_members=True)
 
 
 class Moderation(commands.Cog):

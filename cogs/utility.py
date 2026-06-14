@@ -32,7 +32,7 @@ class Utility(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
-   @app_commands.command(name="userinfo", description="Show info about a member.")
+    @app_commands.command(name="userinfo", description="Show info about a member.")
     @app_commands.describe(member="The member to inspect (defaults to you)")
     async def userinfo(
         self,
