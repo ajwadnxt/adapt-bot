@@ -132,6 +132,59 @@ class TimeBombView(discord.ui.View):
 
 # ── Tic-Tac-Toe Game ────────────────────────────────────────────────────────
 
+class RematchButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.success, label="Rematch 🔄", row=4)
+
+    async def callback(self, interaction: discord.Interaction):
+        assert self.view is not None
+        view: TicTacToeView = self.view
+
+        user = interaction.user
+        if user.id not in (view.player_x.id, view.player_o.id):
+            await interaction.response.send_message(
+                "You are not part of this game!", ephemeral=True
+            )
+            return
+
+        if view.rematch_requested_by is None:
+            view.rematch_requested_by = user
+            self.label = "Accept Rematch (1/2) 🔄"
+            self.style = discord.ButtonStyle.primary
+
+            other_player = view.player_o if user.id == view.player_x.id else view.player_x
+            content = f"{interaction.message.content}\n\n🔄 **{user.display_name}** wants a rematch! **{other_player.mention}**, click **Accept Rematch** to play again."
+            await interaction.response.edit_message(content=content, view=view)
+        else:
+            if user.id == view.rematch_requested_by.id:
+                await interaction.response.send_message(
+                    "You already requested a rematch! Wait for your opponent.",
+                    ephemeral=True,
+                )
+                return
+
+            # Reset game state and swap players so the other goes first
+            view.player_x, view.player_o = view.player_o, view.player_x
+            view.current_player = view.player_x
+            view.board = [
+                [0, 0, 0],
+                [0, 0, 0],
+                [0, 0, 0],
+            ]
+            view.rematch_requested_by = None
+
+            view.clear_items()
+            for y in range(3):
+                for x in range(3):
+                    view.add_item(TicTacToeButton(x, y))
+
+            content = (
+                f"❌ **{view.player_x.mention}** challenged **{view.player_o.mention}** (O) to a game of Tic-Tac-Toe!\n\n"
+                f"It is **{view.player_x.mention}**'s turn (X)."
+            )
+            await interaction.response.edit_message(content=content, view=view)
+
+
 class TicTacToeButton(discord.ui.Button):
     def __init__(self, x: int, y: int):
         super().__init__(style=discord.ButtonStyle.secondary, label="\u200b", row=y)
@@ -175,9 +228,11 @@ class TicTacToeButton(discord.ui.Button):
                 content = "👔 It's a tie!"
 
             for child in view.children:
-                child.disabled = True
+                if isinstance(child, TicTacToeButton):
+                    child.disabled = True
 
-            view.stop()
+            # Add the rematch button instead of stopping view
+            view.add_item(RematchButton())
 
         await interaction.response.edit_message(content=content, view=view)
 
@@ -188,6 +243,7 @@ class TicTacToeView(discord.ui.View):
         self.player_x = player_x
         self.player_o = player_o
         self.current_player = player_x
+        self.rematch_requested_by = None
         self.board = [
             [0, 0, 0],
             [0, 0, 0],
