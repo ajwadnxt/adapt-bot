@@ -12,7 +12,7 @@ OWNER_IDS: list[int] = [int(i) for i in os.getenv("OWNER_IDS", "").split(",") if
 
 #Appearance
 BOT_NAME    = "Adapt"
-BOT_COLOR   = 0x5865F2
+BOT_COLOR   = 0x5990FD
 BOT_VERSION = "2.0.0"
 
 #FeatureFlags
