@@ -7,7 +7,7 @@ log = logging.getLogger("db")
 _pool: asyncpg.Pool | None = None
 
 
-#Pool
+# ── Pool ──────────────────────────────────────────────────────────────────────
 
 async def create_pool() -> asyncpg.Pool:
     global _pool
@@ -27,44 +27,13 @@ def get_pool() -> asyncpg.Pool:
     return _pool
 
 
-#GuildSettings
+# ── Guild Settings ────────────────────────────────────────────────────────────
 
 async def get_guild(guild_id: int) -> asyncpg.Record | None:
-    if _pool is None:
-        return None
     return await get_pool().fetchrow("SELECT * FROM guild_settings WHERE guild_id = $1", guild_id)
 
-async def ensure_guild(guild_id: int) -> asyncpg.Record | dict:
+async def ensure_guild(guild_id: int) -> asyncpg.Record:
     """Get guild settings, creating a default row if it doesn't exist."""
-    if _pool is None:
-        return {
-            "guild_id": guild_id,
-            "prefix": config.PREFIX,
-            "welcome_channel_id": None,
-            "leave_channel_id": None,
-            "welcome_embed": True,
-            "welcome_message": "Welcome {user} to the server!",
-            "leave_message": "{name} has left the server.",
-            "mod_log_channel_id": None,
-            "mute_role_id": None,
-            "log_channel_id": None,
-            "xp_cooldown": 60,
-            "min_xp": 15,
-            "max_xp": 25,
-            "level_up_message": "GG {user}, you level up to level {level}!",
-            "level_up_channel_id": None,
-            "currency_name": "Coins",
-            "currency_symbol": "🪙",
-            "daily_amount": 100,
-            "ticket_category_id": None,
-            "ticket_support_role_id": None,
-            "link_whitelisted_channels": [],
-            "automod_invites": False,
-            "automod_links": False,
-            "automod_spam": False,
-            "automod_mentions": False,
-            "auto_role_ids": [],
-        }
     row = await get_guild(guild_id)
     if not row:
         await get_pool().execute(
@@ -75,8 +44,6 @@ async def ensure_guild(guild_id: int) -> asyncpg.Record | dict:
 
 async def set_guild(guild_id: int, **kwargs) -> None:
     """Update one or more guild_settings columns."""
-    if _pool is None:
-        return
     if not kwargs:
         return
     cols = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs))
@@ -85,16 +52,12 @@ async def set_guild(guild_id: int, **kwargs) -> None:
         guild_id, *kwargs.values()
     )
 
-
 async def get_prefix(guild_id: int) -> str:
-    if _pool is None:
-        return config.PREFIX
     row = await get_guild(guild_id)
     return row["prefix"] if row else config.PREFIX
 
 
-
-#ModLogs
+# ── Mod Logs ──────────────────────────────────────────────────────────────────
 
 async def add_mod_log(guild_id, target_id, moderator_id, action, reason=None, duration=None) -> int:
     row = await get_pool().fetchrow(
@@ -109,7 +72,7 @@ async def get_mod_logs(guild_id: int, target_id: int) -> list:
     )
 
 
-#Warnings
+# ── Warnings ──────────────────────────────────────────────────────────────────
 
 async def add_warning(guild_id, user_id, moderator_id, reason) -> int:
     row = await get_pool().fetchrow(
@@ -128,7 +91,7 @@ async def clear_warnings(guild_id: int, user_id: int) -> int:
     return int(result.split()[-1])
 
 
-#Leveling
+# ── Leveling ──────────────────────────────────────────────────────────────────
 
 async def get_level(guild_id: int, user_id: int) -> asyncpg.Record | None:
     return await get_pool().fetchrow("SELECT * FROM levels WHERE guild_id=$1 AND user_id=$2", guild_id, user_id)
@@ -160,7 +123,7 @@ async def remove_level_role(guild_id: int, level: int) -> None:
     await get_pool().execute("DELETE FROM level_roles WHERE guild_id=$1 AND level=$2", guild_id, level)
 
 
-#Economy
+# ── Economy ───────────────────────────────────────────────────────────────────
 
 async def get_economy(guild_id: int, user_id: int) -> asyncpg.Record | None:
     return await get_pool().fetchrow("SELECT * FROM economy WHERE guild_id=$1 AND user_id=$2", guild_id, user_id)
@@ -186,7 +149,7 @@ async def get_economy_leaderboard(guild_id: int, limit: int = 10) -> list:
     )
 
 
-#Shop
+# ── Shop ──────────────────────────────────────────────────────────────────────
 
 async def get_shop(guild_id: int) -> list:
     return await get_pool().fetch("SELECT * FROM shop_items WHERE guild_id=$1 ORDER BY price", guild_id)
@@ -205,7 +168,7 @@ async def remove_shop_item(item_id: int) -> None:
     await get_pool().execute("DELETE FROM shop_items WHERE id=$1", item_id)
 
 
-#Tickets
+# ── Tickets ───────────────────────────────────────────────────────────────────
 
 async def create_ticket(guild_id, channel_id, user_id, topic=None) -> int:
     row = await get_pool().fetchrow(
@@ -228,7 +191,7 @@ async def get_user_open_ticket(guild_id: int, user_id: int) -> asyncpg.Record | 
     )
 
 
-#ReactionRoles
+# ── Reaction Roles ────────────────────────────────────────────────────────────
 
 async def add_reaction_role(guild_id, channel_id, message_id, emoji, role_id) -> None:
     await get_pool().execute(
@@ -246,7 +209,7 @@ async def remove_reaction_role(message_id: int, emoji: str) -> None:
     await get_pool().execute("DELETE FROM reaction_roles WHERE message_id=$1 AND emoji=$2", message_id, emoji)
 
 
-#CustomCommands
+# ── Custom Commands ───────────────────────────────────────────────────────────
 
 async def get_custom_command(guild_id: int, name: str) -> asyncpg.Record | None:
     return await get_pool().fetchrow("SELECT * FROM custom_commands WHERE guild_id=$1 AND name=$2", guild_id, name)
@@ -270,7 +233,7 @@ async def increment_command_uses(guild_id: int, name: str) -> None:
     await get_pool().execute("UPDATE custom_commands SET uses=uses+1 WHERE guild_id=$1 AND name=$2", guild_id, name)
 
 
-#Automod
+# ── Automod ───────────────────────────────────────────────────────────────────
 
 async def add_automod_log(guild_id, user_id, rule, content=None, action_taken=None) -> None:
     await get_pool().execute(
