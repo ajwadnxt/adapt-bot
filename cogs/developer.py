@@ -5,41 +5,45 @@ import time
 import traceback
 import textwrap
 import contextlib
+import subprocess
+import logging
 import discord
+from discord import app_commands
 from discord.ext import commands
 from utils.checks import is_owner
 from utils.embeds import success, error, info
 import config
 
+log = logging.getLogger("bot")
+
 
 class Developer(commands.Cog):
-    """Owner-only developer tools. Not slash commands — prefix only."""
+    """Owner-only developer tools and administrative utilities (Prefix & Slash)."""
 
     def __init__(self, bot: commands.Bot):
-        self.bot  = bot
+        self.bot = bot
         self._last_result = None  # Store last eval result for reuse
 
     def cog_check(self, ctx: commands.Context) -> bool:
-        """All commands in this cog are owner-only."""
+        """All prefix commands in this cog are owner-only."""
         return ctx.author.id in config.OWNER_IDS
 
-    # ── eval ──────────────────────────────────────────────────────────────────
+    # ── Prefix: eval ──────────────────────────────────────────────────────────
     @commands.command(name="eval", aliases=["e"])
     async def _eval(self, ctx: commands.Context, *, code: str):
         """Evaluate Python code. Use \\`\\`\\` code blocks or inline."""
-        # Strip code blocks
         if code.startswith("```") and code.endswith("```"):
             code = "\n".join(code.split("\n")[1:-1])
         code = code.strip("`").strip()
 
         env = {
-            "bot":    self.bot,
-            "ctx":    ctx,
-            "guild":  ctx.guild,
-            "channel":ctx.channel,
-            "author": ctx.author,
-            "db":     __import__("database.db", fromlist=["db"]),
-            "_":      self._last_result,
+            "bot":     self.bot,
+            "ctx":     ctx,
+            "guild":   ctx.guild,
+            "channel": ctx.channel,
+            "author":  ctx.author,
+            "db":      __import__("database.db", fromlist=["db"]),
+            "_":       self._last_result,
             "discord": discord,
         }
         env.update(globals())
@@ -55,12 +59,12 @@ class Developer(commands.Cog):
         func = env["func"]
         try:
             with contextlib.redirect_stdout(stdout):
-                start  = time.perf_counter()
+                start = time.perf_counter()
                 result = await func()
                 elapsed = (time.perf_counter() - start) * 1000
         except Exception:
             output = stdout.getvalue()
-            tb     = traceback.format_exc()
+            tb = traceback.format_exc()
             return await ctx.send(f"```py\n{output}{tb}\n```"[:2000])
 
         self._last_result = result
@@ -77,9 +81,9 @@ class Developer(commands.Cog):
         embed.set_footer(text=f"Took {elapsed:.2f}ms")
         await ctx.send(embed=embed)
 
-    # ── reload ────────────────────────────────────────────────────────────────
+    # ── Prefix: reload ────────────────────────────────────────────────────────
     @commands.command(name="reload", aliases=["rl"])
-    async def reload(self, ctx: commands.Context, cog: str = None):
+    async def reload_prefix(self, ctx: commands.Context, cog: str = None):
         """Reload one or all cogs without restarting."""
         if cog:
             ext = f"cogs.{cog}" if not cog.startswith("cogs.") else cog
@@ -89,7 +93,6 @@ class Developer(commands.Cog):
             except Exception as e:
                 await ctx.send(embed=error("Reload Failed", f"```{e}```"))
         else:
-            # Reload all
             results = []
             for ext in list(self.bot.extensions):
                 try:
@@ -101,7 +104,7 @@ class Developer(commands.Cog):
             embed = discord.Embed(title="🔄 Reload All", description="\n".join(results), color=config.BOT_COLOR)
             await ctx.send(embed=embed)
 
-    # ── load ──────────────────────────────────────────────────────────────────
+    # ── Prefix: load ──────────────────────────────────────────────────────────
     @commands.command(name="load")
     async def load(self, ctx: commands.Context, cog: str):
         """Load a cog."""
@@ -112,7 +115,7 @@ class Developer(commands.Cog):
         except Exception as e:
             await ctx.send(embed=error("Load Failed", f"```{e}```"))
 
-    # ── unload ────────────────────────────────────────────────────────────────
+    # ── Prefix: unload ────────────────────────────────────────────────────────
     @commands.command(name="unload")
     async def unload(self, ctx: commands.Context, cog: str):
         """Unload a cog."""
@@ -123,7 +126,7 @@ class Developer(commands.Cog):
         except Exception as e:
             await ctx.send(embed=error("Unload Failed", f"```{e}```"))
 
-    # ── sync ──────────────────────────────────────────────────────────────────
+    # ── Prefix: sync ──────────────────────────────────────────────────────────
     @commands.command(name="sync")
     async def sync(self, ctx: commands.Context, scope: str = "guild"):
         """Sync slash commands. scope: guild | global | clear"""
@@ -153,7 +156,7 @@ class Developer(commands.Cog):
         else:
             await msg.edit(embed=error("Unknown Scope", "Use `guild`, `global`, or `clear`."))
 
-    # ── status ────────────────────────────────────────────────────────────────
+    # ── Prefix: presence status ───────────────────────────────────────────────
     @commands.command(name="status")
     async def status(self, ctx: commands.Context, kind: str, *, text: str):
         """Change the bot's presence. kind: watching|playing|listening|streaming"""
@@ -170,7 +173,7 @@ class Developer(commands.Cog):
         await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=text))
         await ctx.send(embed=success("Status Updated", f"{kind.title()} **{text}**"))
 
-    # ── sql ───────────────────────────────────────────────────────────────────
+    # ── Prefix: sql ───────────────────────────────────────────────────────────
     @commands.command(name="sql")
     async def sql(self, ctx: commands.Context, *, query: str):
         """Run a raw SQL query against the database."""
@@ -183,7 +186,6 @@ class Developer(commands.Cog):
             if not results:
                 return await ctx.send(embed=info("SQL", f"Query returned no rows.\n`{elapsed:.2f}ms`"))
 
-            # Format as a simple table
             headers = list(results[0].keys())
             rows    = [list(map(str, r.values())) for r in results[:10]]
             col_w   = [max(len(h), max((len(r[i]) for r in rows), default=0)) for i, h in enumerate(headers)]
@@ -200,7 +202,7 @@ class Developer(commands.Cog):
         except Exception as e:
             await ctx.send(embed=error("SQL Error", f"```{e}```"))
 
-    # ── servers ───────────────────────────────────────────────────────────────
+    # ── Prefix: servers ───────────────────────────────────────────────────────
     @commands.command(name="servers")
     async def servers(self, ctx: commands.Context):
         """List all servers the bot is in."""
@@ -213,7 +215,7 @@ class Developer(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-    # ── botstats ──────────────────────────────────────────────────────────────
+    # ── Prefix: botstats ──────────────────────────────────────────────────────
     @commands.command(name="botstats")
     async def botstats(self, ctx: commands.Context):
         """Show detailed bot statistics."""
@@ -233,7 +235,7 @@ class Developer(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    # ── dm ────────────────────────────────────────────────────────────────────
+    # ── Prefix: dm ────────────────────────────────────────────────────────────
     @commands.command(name="dm")
     async def dm(self, ctx: commands.Context, user: discord.User, *, message: str):
         """DM a user directly."""
@@ -243,11 +245,64 @@ class Developer(commands.Cog):
         except discord.Forbidden:
             await ctx.send(embed=error("Failed", "User has DMs disabled."))
 
-    # ── shutdown ──────────────────────────────────────────────────────────────
+    # ── Prefix: shutdown ──────────────────────────────────────────────────────
     @commands.command(name="shutdown", aliases=["die", "kill"])
-    async def shutdown(self, ctx: commands.Context):
+    async def shutdown_prefix(self, ctx: commands.Context):
         """Shut down the bot."""
         await ctx.send(embed=info("Shutting down...", "Goodbye 👋"))
+        await self.bot.close()
+
+    # ── Slash: Restart Command ─────────────────────────────────────────────────
+    @app_commands.command(name="restart", description="Restart the bot process.")
+    @is_owner()
+    async def restart(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=success(
+                "Restarting", "The bot is restarting... Please wait a few seconds."
+            ),
+            ephemeral=True,
+        )
+        log.info("🔄 Bot restart initiated by owner.")
+        # Spawns a new bot process
+        subprocess.Popen([sys.executable] + sys.argv)
+        # Exits the current process
+        os._exit(0)
+
+    # ── Slash: Reload Command ──────────────────────────────────────────────────
+    @app_commands.command(name="reload", description="Reload a bot cog extension.")
+    @app_commands.describe(
+        cog_name="The name of the cog to reload (e.g. general, customcmds)"
+    )
+    @is_owner()
+    async def reload(self, interaction: discord.Interaction, cog_name: str):
+        full_cog_name = cog_name.strip()
+        if not full_cog_name.startswith("cogs."):
+            full_cog_name = f"cogs.{full_cog_name}"
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.bot.reload_extension(full_cog_name)
+            log.info(f"🔄 Reloaded extension: {full_cog_name}")
+            await interaction.followup.send(
+                embed=success("Extension Reloaded", f"Successfully reloaded `{full_cog_name}`.")
+            )
+        except Exception as e:
+            log.error(f"❌ Failed to reload extension {full_cog_name}: {e}")
+            await interaction.followup.send(
+                embed=error(
+                    "Reload Failed", f"Failed to reload `{full_cog_name}`:\n```py\n{e}\n```"
+                )
+            )
+
+    # ── Slash: Shutdown Command ────────────────────────────────────────────────
+    @app_commands.command(name="shutdown", description="Safely shut down the bot.")
+    @is_owner()
+    async def shutdown(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=success("Shutting Down", "The bot is shutting down safely."),
+            ephemeral=True,
+        )
+        log.info("🔌 Bot shutdown initiated by owner.")
         await self.bot.close()
 
 

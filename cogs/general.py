@@ -8,19 +8,20 @@ import config
 # ── Category metadata ─────────────────────────────────────────────────────────
 # Maps cog names to (emoji, short description) for the help menu.
 COG_META: dict[str, tuple[str, str]] = {
-    "General":    ("🌐", "General-purpose commands"),
-    "Utility":    ("🛠️", "Utility & info commands"),
-    "Moderation": ("🔨", "Server moderation tools"),
-    "Settings":   ("⚙️", "Server configuration"),
-    "Welcome":    ("👋", "Welcome & leave messages"),
-    "Logging":    ("📝", "Event logging"),
-    "Leveling":   ("⭐", "XP & leveling system"),
-    "Economy":    ("🪙", "Currency & economy"),
-    "Tickets":    ("🎫", "Ticket support system"),
-    "AutoMod":    ("🛡️", "Auto-moderation"),
-    "Roles":      ("🎭", "Role management"),
-    "CustomCmds": ("📝", "Custom commands"),
-    "Developer":  ("👨‍💻", "Developer-only tools"),
+    "General":        ("🌐", "General-purpose commands"),
+    "Utility":        ("🛠️", "Utility & info commands"),
+    "Moderation":     ("🔨", "Server moderation tools"),
+    "Settings":       ("⚙️", "Server configuration"),
+    "Welcome":        ("👋", "Welcome & leave messages"),
+    "Logging":        ("📝", "Event logging"),
+    "Leveling":       ("⭐", "XP & leveling system"),
+    "Economy":        ("🪙", "Currency & economy"),
+    "Tickets":        ("🎫", "Ticket support system"),
+    "AutoMod":        ("🛡️", "Auto-moderation"),
+    "Roles":          ("🎭", "Role management"),
+    "CustomCommands": ("📝", "Custom commands"),
+    "Developer":      ("👨‍💻", "Developer-only tools"),
+    "Games":          ("🎮", "Fun & interactive games"),
 }
 
 
@@ -59,16 +60,24 @@ def _build_home_embed(bot: commands.Bot, categories: dict) -> discord.Embed:
         for cmds in categories.values()
         for c in cmds
     )
+    latency_ms = round(bot.latency * 1000)
+    guilds_count = len(bot.guilds)
 
-    embed = discord.Embed(
-        title=f"📖  {config.BOT_NAME} — Help",
-        description=(
-            f"Hey! I'm **{config.BOT_NAME}**, a feature-rich Discord bot.\n"
-            f"I currently have **{total_cmds}** commands across **{len(categories)}** categories.\n\n"
-            "Use the **dropdown menu** below to browse each category."
-        ),
-        color=config.BOT_COLOR,
-    )
+    desc_lines = [
+        f"👋 **Greetings!** Welcome to the **{config.BOT_NAME}** control center.",
+        "I am a highly optimized, feature-rich bot designed to enhance your server experience.",
+        "",
+        "📊 **System Metrics**",
+        "```ansi",
+        f"\u001b[2;36m┌──\u001b[0m ⚡ \u001b[1;37mGateway Latency:\u001b[0m \u001b[1;32m{latency_ms}ms\u001b[0m",
+        f"\u001b[2;36m├──\u001b[0m 🌐 \u001b[1;37mServer Count:   \u001b[0m \u001b[1;35m{guilds_count}\u001b[0m",
+        f"\u001b[2;36m├──\u001b[0m 📁 \u001b[1;37mActive Modules: \u001b[0m \u001b[1;33m{len(categories)}\u001b[0m",
+        f"\u001b[2;36m└──\u001b[0m ⚙️ \u001b[1;37mTotal Commands: \u001b[0m \u001b[1;34m{total_cmds}\u001b[0m",
+        "```",
+        "✨ **Browse Categories**",
+        "Select a category from the dropdown menu below to view specific command details.",
+        ""
+    ]
 
     for cog_name, cmds in sorted(categories.items()):
         emoji = _get_cog_emoji(cog_name)
@@ -76,50 +85,65 @@ def _build_home_embed(bot: commands.Bot, categories: dict) -> discord.Embed:
             (1 + len(c.commands) if isinstance(c, app_commands.Group) else 1)
             for c in cmds
         )
-        embed.add_field(
-            name=f"{emoji}  {cog_name}",
-            value=f"`{count}` command{'s' if count != 1 else ''} — {_get_cog_desc(cog_name)}",
-            inline=True,
-        )
+        desc_lines.append(f"{emoji} **{cog_name}**")
+        desc_lines.append(f"┕ `{count}` command{'s' if count != 1 else ''} • *{_get_cog_desc(cog_name)}*")
+        desc_lines.append("")
 
-    if bot.user and bot.user.avatar:
-        embed.set_thumbnail(url=bot.user.avatar.url)
+    embed = discord.Embed(
+        title=f"🔮 {config.BOT_NAME} Systems Command",
+        description="\n".join(desc_lines),
+        color=config.BOT_COLOR,
+    )
 
-    embed.set_footer(text=f"v{config.BOT_VERSION} • Made with ❤️")
+    embed.set_footer(
+        text=f"Adapt Hub v{config.BOT_VERSION} • Developed by ajwadnxt",
+        icon_url=bot.user.avatar.url if bot.user and bot.user.avatar else None
+    )
     return embed
 
 
 def _build_category_embed(cog_name: str, cmds: list, bot: commands.Bot) -> discord.Embed:
     """Build an embed listing every command in a given category."""
     emoji = _get_cog_emoji(cog_name)
+    
+    desc_lines = [
+        f"### {emoji} {cog_name} Module",
+        f"*{_get_cog_desc(cog_name)}*",
+        "",
+        "**Available Commands:**",
+        ""
+    ]
+    
+    if not cmds:
+        desc_lines.append("*No commands found in this module.*")
+    else:
+        for cmd in cmds:
+            if isinstance(cmd, app_commands.Group):
+                desc_lines.append(f"🔹 **`/{cmd.name}`** *(Command Group)*")
+                sub_lines = []
+                for sub in sorted(cmd.commands, key=lambda s: s.name):
+                    sub_lines.append(f"  ┕ `/{cmd.name} {sub.name}` • *{sub.description or 'No description'}*")
+                if sub_lines:
+                    desc_lines.extend(sub_lines)
+                else:
+                    desc_lines.append("  ┕ *No subcommands registered*")
+            else:
+                desc_lines.append(f"✦ **`/{cmd.name}`**")
+                desc_lines.append(f"  ┕ *{cmd.description or 'No description available'}*")
+            desc_lines.append("")  # Spacer between commands
+
     embed = discord.Embed(
-        title=f"{emoji}  {cog_name} Commands",
-        description=_get_cog_desc(cog_name),
+        description="\n".join(desc_lines),
         color=config.BOT_COLOR,
     )
-
-    for cmd in cmds:
-        if isinstance(cmd, app_commands.Group):
-            # Show subcommands for groups
-            sub_lines = []
-            for sub in sorted(cmd.commands, key=lambda s: s.name):
-                sub_lines.append(f"> `/{cmd.name} {sub.name}` — {sub.description}")
-            embed.add_field(
-                name=f"🔹  /{cmd.name}",
-                value="\n".join(sub_lines) if sub_lines else "*No subcommands*",
-                inline=False,
-            )
-        else:
-            embed.add_field(
-                name=f"`/{cmd.name}`",
-                value=cmd.description or "No description",
-                inline=True,
-            )
 
     if bot.user and bot.user.avatar:
         embed.set_thumbnail(url=bot.user.avatar.url)
 
-    embed.set_footer(text=f"v{config.BOT_VERSION} • Use /help to go back")
+    embed.set_footer(
+        text=f"Adapt Hub v{config.BOT_VERSION} • Select 'Home' in menu to go back",
+        icon_url=bot.user.avatar.url if bot.user and bot.user.avatar else None
+    )
     return embed
 
 

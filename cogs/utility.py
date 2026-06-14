@@ -101,5 +101,86 @@ class Utility(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
 
+    @app_commands.command(name="embed", description="Send a custom embed message.")
+    @app_commands.describe(
+        description="The description content of the embed (use \\n for new lines)",
+        title="The title of the embed",
+        color="Hex color code (e.g. #FF5733 or FF5733)",
+        channel="The channel to send the embed to (defaults to current)",
+        thumbnail="URL of the thumbnail image",
+        image="URL of the main image",
+        footer="Footer text of the embed"
+    )
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def embed(
+        self,
+        interaction: discord.Interaction,
+        description: str,
+        title: str | None = None,
+        color: str | None = None,
+        channel: discord.TextChannel | None = None,
+        thumbnail: str | None = None,
+        image: str | None = None,
+        footer: str | None = None
+    ):
+        target_channel = channel or interaction.channel # type: ignore[assignment]
+        processed_desc = description.replace("\\n", "\n")
+
+        embed_color = config.BOT_COLOR
+        if color:
+            cleaned_color = color.strip().lstrip("#")
+            try:
+                embed_color = int(cleaned_color, 16)
+            except ValueError:
+                await interaction.response.send_message(
+                    "❌ Invalid hex color code. Please use format `#HEX` (e.g. `#FF5733`) or `HEX` (e.g. `FF5733`).",
+                    ephemeral=True
+                )
+                return
+
+        new_embed = discord.Embed(
+            title=title,
+            description=processed_desc,
+            color=embed_color
+        )
+
+        if thumbnail:
+            if thumbnail.startswith(("http://", "https://")):
+                new_embed.set_thumbnail(url=thumbnail.strip())
+            else:
+                await interaction.response.send_message(
+                    "❌ Invalid thumbnail URL. It must start with http:// or https://",
+                    ephemeral=True
+                )
+                return
+
+        if image:
+            if image.startswith(("http://", "https://")):
+                new_embed.set_image(url=image.strip())
+            else:
+                await interaction.response.send_message(
+                    "❌ Invalid image URL. It must start with http:// or https://",
+                    ephemeral=True
+                )
+                return
+
+        if footer:
+            new_embed.set_footer(text=footer)
+
+        try:
+            await target_channel.send(embed=new_embed)
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                f"❌ I don't have permission to send messages in {target_channel.mention}.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ Embed sent successfully to {target_channel.mention}!",
+            ephemeral=True
+        )
+
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(Utility(bot))
