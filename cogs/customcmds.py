@@ -145,7 +145,7 @@ class CustomCommands(commands.Cog):
             )
             self._save_local_commands()
 
-    # ── Dynamic Slash Command Registration & Management ────────────────────────
+    # ── Dynamic Slash Command Registration & Management ─────────────────────────
     def _make_callback(self, guild_id: int, name: str, response: str):
         async def custom_callback(interaction: discord.Interaction):
             await self.incr_uses(guild_id, name)
@@ -353,7 +353,7 @@ class CustomCommands(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    # ── Text Listener for Prefix Custom Commands ──────────────────────────────────
+    # ── Text Listener for Prefix Custom Commands ────────────────────────────────
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
