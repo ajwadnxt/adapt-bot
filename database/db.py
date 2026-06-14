@@ -53,8 +53,11 @@ async def set_guild(guild_id: int, **kwargs) -> None:
     )
 
 async def get_prefix(guild_id: int) -> str:
+    if _pool is None:
+        return config.PREFIX
     row = await get_guild(guild_id)
     return row["prefix"] if row else config.PREFIX
+
 
 
 #ModLogs
