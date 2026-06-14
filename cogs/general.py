@@ -5,6 +5,190 @@ from discord.ext import commands
 import config
 
 
+# ── Category metadata ─────────────────────────────────────────────────────────
+# Maps cog names to (emoji, short description) for the help menu.
+COG_META: dict[str, tuple[str, str]] = {
+    "General":    ("🌐", "General-purpose commands"),
+    "Utility":    ("🛠️", "Utility & info commands"),
+    "Moderation": ("🔨", "Server moderation tools"),
+    "Settings":   ("⚙️", "Server configuration"),
+    "Welcome":    ("👋", "Welcome & leave messages"),
+    "Logging":    ("📝", "Event logging"),
+    "Leveling":   ("⭐", "XP & leveling system"),
+    "Economy":    ("🪙", "Currency & economy"),
+    "Tickets":    ("🎫", "Ticket support system"),
+    "AutoMod":    ("🛡️", "Auto-moderation"),
+    "Roles":      ("🎭", "Role management"),
+    "CustomCmds": ("📝", "Custom commands"),
+    "Developer":  ("👨‍💻", "Developer-only tools"),
+}
+
+
+def _get_cog_emoji(cog_name: str) -> str:
+    return COG_META.get(cog_name, ("📦",))[0]
+
+
+def _get_cog_desc(cog_name: str) -> str:
+    return COG_META.get(cog_name, (None, "Miscellaneous commands"))[1]
+
+
+def _collect_commands(bot: commands.Bot) -> dict[str, list[app_commands.Command | app_commands.Group]]:
+    """Group all registered app commands by their cog name."""
+    categories: dict[str, list] = {}
+
+    for cmd in bot.tree.get_commands():
+        # Determine cog name from the binding (cog instance)
+        if hasattr(cmd, "binding") and cmd.binding is not None:
+            cog_name = type(cmd.binding).__name__
+        else:
+            cog_name = "Uncategorized"
+
+        categories.setdefault(cog_name, []).append(cmd)
+
+    # Sort commands inside each category alphabetically
+    for cat in categories:
+        categories[cat].sort(key=lambda c: c.name)
+
+    return categories
+
+
+def _build_home_embed(bot: commands.Bot, categories: dict) -> discord.Embed:
+    """Build the main overview embed showing all categories."""
+    total_cmds = sum(
+        (1 + len(c.commands) if isinstance(c, app_commands.Group) else 1)
+        for cmds in categories.values()
+        for c in cmds
+    )
+
+    embed = discord.Embed(
+        title=f"📖  {config.BOT_NAME} — Help",
+        description=(
+            f"Hey! I'm **{config.BOT_NAME}**, a feature-rich Discord bot.\n"
+            f"I currently have **{total_cmds}** commands across **{len(categories)}** categories.\n\n"
+            "Use the **dropdown menu** below to browse each category."
+        ),
+        color=config.BOT_COLOR,
+    )
+
+    for cog_name, cmds in sorted(categories.items()):
+        emoji = _get_cog_emoji(cog_name)
+        count = sum(
+            (1 + len(c.commands) if isinstance(c, app_commands.Group) else 1)
+            for c in cmds
+        )
+        embed.add_field(
+            name=f"{emoji}  {cog_name}",
+            value=f"`{count}` command{'s' if count != 1 else ''} — {_get_cog_desc(cog_name)}",
+            inline=True,
+        )
+
+    if bot.user and bot.user.avatar:
+        embed.set_thumbnail(url=bot.user.avatar.url)
+
+    embed.set_footer(text=f"v{config.BOT_VERSION} • Made with ❤️")
+    return embed
+
+
+def _build_category_embed(cog_name: str, cmds: list, bot: commands.Bot) -> discord.Embed:
+    """Build an embed listing every command in a given category."""
+    emoji = _get_cog_emoji(cog_name)
+    embed = discord.Embed(
+        title=f"{emoji}  {cog_name} Commands",
+        description=_get_cog_desc(cog_name),
+        color=config.BOT_COLOR,
+    )
+
+    for cmd in cmds:
+        if isinstance(cmd, app_commands.Group):
+            # Show subcommands for groups
+            sub_lines = []
+            for sub in sorted(cmd.commands, key=lambda s: s.name):
+                sub_lines.append(f"> `/{cmd.name} {sub.name}` — {sub.description}")
+            embed.add_field(
+                name=f"🔹  /{cmd.name}",
+                value="\n".join(sub_lines) if sub_lines else "*No subcommands*",
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name=f"`/{cmd.name}`",
+                value=cmd.description or "No description",
+                inline=True,
+            )
+
+    if bot.user and bot.user.avatar:
+        embed.set_thumbnail(url=bot.user.avatar.url)
+
+    embed.set_footer(text=f"v{config.BOT_VERSION} • Use /help to go back")
+    return embed
+
+
+# ── Help Select Menu ──────────────────────────────────────────────────────────
+
+class HelpSelect(discord.ui.Select):
+    def __init__(self, categories: dict[str, list], bot: commands.Bot):
+        self.categories = categories
+        self.bot_ref = bot
+
+        options = [
+            discord.SelectOption(
+                label="🏠 Home",
+                value="__home__",
+                description="Overview of all categories",
+                emoji="📖",
+            )
+        ]
+        for cog_name in sorted(categories):
+            emoji = _get_cog_emoji(cog_name)
+            count = sum(
+                (1 + len(c.commands) if isinstance(c, app_commands.Group) else 1)
+                for c in categories[cog_name]
+            )
+            options.append(
+                discord.SelectOption(
+                    label=cog_name,
+                    value=cog_name,
+                    description=f"{count} command{'s' if count != 1 else ''} — {_get_cog_desc(cog_name)}",
+                    emoji=emoji,
+                )
+            )
+
+        super().__init__(
+            placeholder="Select a category…",
+            options=options[:25],  # Discord limit
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        value = self.values[0]
+        if value == "__home__":
+            embed = _build_home_embed(self.bot_ref, self.categories)
+        else:
+            embed = _build_category_embed(value, self.categories[value], self.bot_ref)
+        await interaction.response.edit_message(embed=embed)
+
+
+class HelpView(discord.ui.View):
+    def __init__(self, categories: dict[str, list], bot: commands.Bot, author_id: int):
+        super().__init__(timeout=120)
+        self.author_id = author_id
+        self.add_item(HelpSelect(categories, bot))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "❌ This help menu isn't yours! Use `/help` to open your own.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+# ── Cog ───────────────────────────────────────────────────────────────────────
+
 class General(commands.Cog):
     """General-purpose commands available to everyone."""
 
@@ -12,7 +196,6 @@ class General(commands.Cog):
         self.bot = bot
         self._start_time = time.time()
 
-    
     @app_commands.command(name="ping", description="Check the bot's latency.")
     async def ping(self, interaction: discord.Interaction):
         latency_ms = round(self.bot.latency * 1000)
@@ -30,28 +213,11 @@ class General(commands.Cog):
 
     @app_commands.command(name="help", description="Show all available commands.")
     async def help(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title=f"📖 {config.BOT_NAME} Help",
-            description="Here's what I can do:",
-            color=config.BOT_COLOR,
-        )
-        embed.add_field(
-            name="🌐 General",
-            value="`/ping` `/help` `/info` `/uptime`",
-            inline=False,
-        )
-        embed.add_field(
-            name="🔨 Moderation",
-            value="`/kick` `/ban` `/timeout` `/purge`",
-            inline=False,
-        )
-        embed.add_field(
-            name="🛠️ Utility",
-            value="`/avatar` `/serverinfo` `/userinfo`",
-            inline=False,
-        )
-        embed.set_footer(text=f"v{config.BOT_VERSION}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        categories = _collect_commands(self.bot)
+        embed = _build_home_embed(self.bot, categories)
+        view = HelpView(categories, self.bot, interaction.user.id)
+        await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="info", description="Show info about the bot.")
     async def info(self, interaction: discord.Interaction):
@@ -82,6 +248,126 @@ class General(commands.Cog):
             color=config.BOT_COLOR,
         )
         await interaction.response.send_message(embed=embed)
+
+    # ── /botprofile (owner-only) ──────────────────────────────────────────
+    botprofile = app_commands.Group(
+        name="botprofile",
+        description="Change the bot's profile (owner only).",
+    )
+
+    @botprofile.command(name="avatar", description="Change the bot's avatar.")
+    @app_commands.describe(image="Upload an image to use as the new avatar")
+    async def bp_avatar(self, interaction: discord.Interaction, image: discord.Attachment):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Only the bot owner can use this.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not image.content_type or not image.content_type.startswith("image/"):
+            return await interaction.followup.send(
+                embed=discord.Embed(title="❌ Invalid File", description="Please upload a valid image (PNG, JPG, GIF).", color=discord.Color.red())
+            )
+
+        try:
+            avatar_bytes = await image.read()
+            await self.bot.user.edit(avatar=avatar_bytes)
+            embed = discord.Embed(
+                title="✅ Avatar Updated",
+                description="The bot's avatar has been changed!",
+                color=discord.Color.green(),
+            )
+            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+            await interaction.followup.send(embed=embed)
+        except discord.HTTPException as e:
+            await interaction.followup.send(
+                embed=discord.Embed(title="❌ Failed", description=f"Could not update avatar: `{e}`", color=discord.Color.red())
+            )
+
+    @botprofile.command(name="username", description="Change the bot's username.")
+    @app_commands.describe(name="The new username for the bot")
+    async def bp_username(self, interaction: discord.Interaction, name: str):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Only the bot owner can use this.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        if len(name) < 2 or len(name) > 32:
+            return await interaction.followup.send(
+                embed=discord.Embed(title="❌ Invalid Name", description="Username must be 2–32 characters.", color=discord.Color.red())
+            )
+
+        try:
+            await self.bot.user.edit(username=name)
+            embed = discord.Embed(
+                title="✅ Username Updated",
+                description=f"Bot username changed to **{name}**",
+                color=discord.Color.green(),
+            )
+            await interaction.followup.send(embed=embed)
+        except discord.HTTPException as e:
+            await interaction.followup.send(
+                embed=discord.Embed(title="❌ Failed", description=f"Could not update username: `{e}`\n\n> **Note:** Discord limits username changes to 2 per hour.", color=discord.Color.red())
+            )
+
+    @botprofile.command(name="status", description="Change the bot's status message.")
+    @app_commands.describe(
+        text="The status text to display",
+        activity_type="The type of activity",
+    )
+    @app_commands.choices(activity_type=[
+        app_commands.Choice(name="Playing", value=0),
+        app_commands.Choice(name="Streaming", value=1),
+        app_commands.Choice(name="Listening", value=2),
+        app_commands.Choice(name="Watching", value=3),
+        app_commands.Choice(name="Competing", value=5),
+    ])
+    async def bp_status(
+        self,
+        interaction: discord.Interaction,
+        text: str,
+        activity_type: app_commands.Choice[int] = None,
+    ):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Only the bot owner can use this.", ephemeral=True)
+
+        atype = discord.ActivityType(activity_type.value if activity_type else 3)
+        activity = discord.Activity(type=atype, name=text)
+        await self.bot.change_presence(activity=activity)
+
+        type_name = activity_type.name if activity_type else "Watching"
+        embed = discord.Embed(
+            title="✅ Status Updated",
+            description=f"**{type_name}** {text}",
+            color=discord.Color.green(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @botprofile.command(name="banner", description="Change the bot's banner (requires Nitro).")
+    @app_commands.describe(image="Upload an image to use as the new banner")
+    async def bp_banner(self, interaction: discord.Interaction, image: discord.Attachment):
+        if not await self.bot.is_owner(interaction.user):
+            return await interaction.response.send_message("❌ Only the bot owner can use this.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not image.content_type or not image.content_type.startswith("image/"):
+            return await interaction.followup.send(
+                embed=discord.Embed(title="❌ Invalid File", description="Please upload a valid image (PNG, JPG).", color=discord.Color.red())
+            )
+
+        try:
+            banner_bytes = await image.read()
+            await self.bot.user.edit(banner=banner_bytes)
+            embed = discord.Embed(
+                title="✅ Banner Updated",
+                description="The bot's banner has been changed!",
+                color=discord.Color.green(),
+            )
+            await interaction.followup.send(embed=embed)
+        except discord.HTTPException as e:
+            await interaction.followup.send(
+                embed=discord.Embed(title="❌ Failed", description=f"Could not update banner: `{e}`", color=discord.Color.red())
+            )
 
 
 async def setup(bot: commands.Bot):
