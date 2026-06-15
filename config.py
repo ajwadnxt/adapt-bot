@@ -5,7 +5,7 @@ load_dotenv()
 
 # ─── Core ─────────────────────────────────────────────────────────────────────
 TOKEN: str           = os.getenv("DISCORD_TOKEN", "")
-PREFIX: str          = os.getenv("BOT_PREFIX", "!")
+PREFIX: str          = os.getenv("BOT_PREFIX", ".")
 GUILD_ID: int | None = int(gid) if (gid := os.getenv("GUILD_ID")) else None
 DATABASE_URL: str    = os.getenv("DATABASE_URL", "")
 OWNER_IDS: list[int] = [int(i) for i in os.getenv("OWNER_IDS", "").split(",") if i.strip()]
