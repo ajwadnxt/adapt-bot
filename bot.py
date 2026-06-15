@@ -3,11 +3,8 @@ import logging
 import discord
 from discord.ext import commands
 import config
-from database.db import create_pool, close_pool
-import os
-import sys
-import atexit
 
+# ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -15,106 +12,49 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
-# Prevent multiple instances on Windows/Linux by locking a file
-lock_file_handle = None
-
-def acquire_lock():
-    global lock_file_handle
-    lock_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.lock")
-    if os.path.exists(lock_path):
-        try:
-            os.remove(lock_path)
-        except OSError:
-            log.critical("❌ Another instance of the bot is already running (bot.lock is active). Exiting.")
-            sys.exit(1)
-            
-    try:
-        lock_file_handle = open(lock_path, "w")
-        lock_file_handle.write(str(os.getpid()))
-        lock_file_handle.flush()
-    except OSError as e:
-        log.critical(f"❌ Failed to acquire bot.lock: {e}. Exiting.")
-        sys.exit(1)
-
-def release_lock():
-    global lock_file_handle
-    if lock_file_handle:
-        try:
-            lock_file_handle.close()
-        except OSError:
-            pass
-        lock_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.lock")
-        try:
-            if os.path.exists(lock_path):
-                os.remove(lock_path)
-        except OSError:
-            pass
-
+# ─── Intents ──────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+intents.message_content = True   # Required for prefix commands + reading messages
+intents.members = True           # Required for member-related mod actions
 
 
-class AdaptBot(commands.Bot):
+# ─── Bot Subclass ─────────────────────────────────────────────────────────────
+class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(
-            command_prefix=self._get_prefix,
+            command_prefix=config.PREFIX,
             intents=intents,
-            help_command=None,
-            owner_ids=set(config.OWNER_IDS),
+            help_command=None,          # We'll add a custom one later
         )
 
-    async def _get_prefix(self, bot, message: discord.Message):
-        if not message.guild:
-            return config.PREFIX
-        from database.db import get_prefix
-        return await get_prefix(message.guild.id)
-
+    # Called once, before the bot connects — good place to set up DB pools etc.
     async def setup_hook(self):
-        if config.DATABASE_URL:
-            self.db_pool = await create_pool()
-        else:
-            log.warning("⚠️  DATABASE_URL not set — running without database")
-            self.db_pool = None
         await self._load_cogs()
         await self._sync_commands()
 
     async def _load_cogs(self):
-        cogs = [
-            ("cogs.general",     True),
-            ("cogs.utility",     config.ENABLE_UTILITY),
-            ("cogs.settings",    config.ENABLE_SETTINGS),
-            ("cogs.moderation",  config.ENABLE_MODERATION),
-            ("cogs.welcome",     config.ENABLE_WELCOME),
-            ("cogs.logging",     config.ENABLE_LOGGING),
-            ("cogs.leveling",    config.ENABLE_LEVELING),
-            ("cogs.economy",     config.ENABLE_ECONOMY),
-            ("cogs.tickets",     config.ENABLE_TICKETS),
-            ("cogs.automod",     config.ENABLE_AUTOMOD),
-            ("cogs.roles",       config.ENABLE_ROLES),
-            ("cogs.customcmds",  config.ENABLE_CUSTOMCMDS),
-            ("cogs.developer",   config.ENABLE_DEVELOPER),
-            ("cogs.games",       True),
-            ("cogs.giveaway",    config.ENABLE_GIVEAWAY),
-        ]
-        for cog, enabled in cogs:
-            if not enabled:
-                continue
+        cogs = ["cogs.general"]
+        if config.ENABLE_MODERATION:
+            cogs.append("cogs.moderation")
+        if config.ENABLE_UTILITY:
+            cogs.append("cogs.utility")
+
+        for cog in cogs:
             try:
                 await self.load_extension(cog)
-                log.info(f"✅  Loaded: {cog}")
+                log.info(f"✅  Loaded cog: {cog}")
             except Exception as e:
-                log.error(f"❌  Failed to load {cog}: {e}")
+                log.error(f"❌  Failed to load cog {cog}: {e}")
 
     async def _sync_commands(self):
         if config.GUILD_ID:
             guild = discord.Object(id=config.GUILD_ID)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            log.info(f"⚡  Commands synced to guild {config.GUILD_ID}")
+            log.info(f"⚡  Slash commands synced to dev guild {config.GUILD_ID}")
         else:
             await self.tree.sync()
-            log.info("🌐  Commands synced globally")
+            log.info("🌐  Slash commands synced globally (may take up to 1 hour)")
 
     async def on_ready(self):
         log.info(f"🤖  Logged in as {self.user} (ID: {self.user.id})")
@@ -127,23 +67,19 @@ class AdaptBot(commands.Bot):
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         if isinstance(error, commands.CommandNotFound):
-            return
-        log.error(f"Command error in {ctx.command}: {error}")
-
-    async def close(self):
-        await close_pool()
-        await super().close()
+            return  # Silently ignore unknown prefix commands
+        log.error(f"Prefix command error in {ctx.command}: {error}")
 
 
+# ─── Entry Point ──────────────────────────────────────────────────────────────
 async def main():
     if not config.TOKEN:
-        log.critical("DISCORD_TOKEN is not set.")
+        log.critical("DISCORD_TOKEN is not set. Check your .env file.")
         return
-    async with AdaptBot() as bot:
+
+    async with MyBot() as bot:
         await bot.start(config.TOKEN)
 
 
 if __name__ == "__main__":
-    acquire_lock()
-    atexit.register(release_lock)
     asyncio.run(main())
