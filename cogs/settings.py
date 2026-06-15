@@ -20,6 +20,7 @@ class SettingsSelect(discord.ui.Select):
             discord.SelectOption(label="Economy",      value="economy",    emoji="🪙",  description="Currency settings"),
             discord.SelectOption(label="Tickets",      value="tickets",    emoji="🎫",  description="Ticket system settings"),
             discord.SelectOption(label="Auto-Mod",     value="automod",    emoji="🛡️",  description="Auto-moderation settings"),
+            discord.SelectOption(label="Giveaways",    value="giveaways",  emoji="🎉",  description="Giveaway default settings"),
         ]
         super().__init__(placeholder="Select a category...", options=options)
 
@@ -103,6 +104,24 @@ class SettingsView(discord.ui.View):
             embed.add_field(name="Log Channel", value=ch(cfg["automod_log_channel_id"]), inline=True)
             words = cfg["automod_badwords_list"] or []
             embed.add_field(name=f"Bad Word List ({len(words)})", value=f"`{', '.join(words)}`" if words else "`None`", inline=False)
+        elif category == "giveaways":
+            giveaway_cog = interaction.client.get_cog("Giveaway")
+            if giveaway_cog:
+                g_cfg = await giveaway_cog.get_settings(self.guild_id)
+            else:
+                g_cfg = {
+                    "giveaway_emoji": "🎉",
+                    "giveaway_color": config.BOT_COLOR,
+                    "giveaway_ping_role_id": None,
+                    "giveaway_pin": False,
+                }
+            embed = info("Giveaway Settings")
+            embed.add_field(name="Default Emoji", value=g_cfg["giveaway_emoji"], inline=True)
+            c_val = g_cfg["giveaway_color"]
+            c_hex = hex(c_val) if isinstance(c_val, int) else str(c_val)
+            embed.add_field(name="Default Color", value=f"`{c_hex}`", inline=True)
+            embed.add_field(name="Default Ping Role", value=ro(g_cfg["giveaway_ping_role_id"]), inline=True)
+            embed.add_field(name="Auto-Pin Messages", value=bo(g_cfg["giveaway_pin"]), inline=True)
         else:
             embed = error("Unknown category")
 
@@ -373,7 +392,54 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, automod_log_channel_id=channel.id)
         await interaction.response.send_message(embed=success("Auto-Mod Log Set", f"{channel.mention}"), ephemeral=True)
 
-    # ── Error handler ─────────────────────────────────────────────────────
+    # ── /set giveaway ─────────────────────────────────────────────────────────
+    set_giveaway = app_commands.Group(name="giveaway", description="Giveaway default settings.", parent=set_group)
+
+    @set_giveaway.command(name="emoji", description="Set default emoji for giveaway join buttons.")
+    @is_admin()
+    async def set_giveaway_emoji(self, interaction: discord.Interaction, emoji: str):
+        giveaway_cog = interaction.client.get_cog("Giveaway")
+        if not giveaway_cog:
+            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
+        await giveaway_cog.save_setting(interaction.guild_id, giveaway_emoji=emoji)
+        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default join button emoji set to {emoji}"), ephemeral=True)
+
+    @set_giveaway.command(name="color", description="Set default color for giveaway embeds (Hex code).")
+    @is_admin()
+    async def set_giveaway_color(self, interaction: discord.Interaction, hex_color: str):
+        clean_hex = hex_color.replace("#", "").strip()
+        try:
+            color_int = int(clean_hex, 16)
+        except ValueError:
+            return await interaction.response.send_message(embed=error("Invalid Color", "Please provide a valid hex color code like `#FF5733`."), ephemeral=True)
+
+        giveaway_cog = interaction.client.get_cog("Giveaway")
+        if not giveaway_cog:
+            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
+        await giveaway_cog.save_setting(interaction.guild_id, giveaway_color=color_int)
+        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default embed color set to `{hex_color}`"), ephemeral=True)
+
+    @set_giveaway.command(name="ping_role", description="Set default role to mention when starting giveaways.")
+    @is_admin()
+    async def set_giveaway_ping_role(self, interaction: discord.Interaction, role: discord.Role | None = None):
+        giveaway_cog = interaction.client.get_cog("Giveaway")
+        if not giveaway_cog:
+            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
+        role_id = role.id if role else None
+        await giveaway_cog.save_setting(interaction.guild_id, giveaway_ping_role_id=role_id)
+        mention_str = role.mention if role else "None"
+        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default ping role set to {mention_str}"), ephemeral=True)
+
+    @set_giveaway.command(name="pin", description="Enable or disable pinning giveaway messages by default.")
+    @is_admin()
+    async def set_giveaway_pin(self, interaction: discord.Interaction, enabled: bool):
+        giveaway_cog = interaction.client.get_cog("Giveaway")
+        if not giveaway_cog:
+            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
+        await giveaway_cog.save_setting(interaction.guild_id, giveaway_pin=enabled)
+        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default auto-pin set to **{enabled}**"), ephemeral=True)
+
+    # ── Error handler ─────────────────────────────────────────────────────────
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("❌ You need **Administrator** to use settings.", ephemeral=True)
