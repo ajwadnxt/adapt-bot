@@ -33,8 +33,15 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     automod_links BOOLEAN DEFAULT FALSE,
     automod_badwords BOOLEAN DEFAULT FALSE,
     automod_badwords_list TEXT[] DEFAULT '{}',
-    automod_log_channel_id BIGINT
+    automod_log_channel_id BIGINT,
+
+    -- Giveaway Settings
+    giveaway_emoji VARCHAR(64) DEFAULT '🎉',
+    giveaway_color INT DEFAULT 5869821, -- Hex 0x5990FD
+    giveaway_ping_role_id BIGINT,
+    giveaway_pin BOOLEAN DEFAULT FALSE
 );
+
 
 -- 2. Mod Logs
 CREATE TABLE IF NOT EXISTS mod_logs (

@@ -43,9 +43,24 @@ def parse_duration(duration_str: str) -> int | None:
 # ── Persistent Views for Giveaways ───────────────────────────────────────────
 
 class GiveawayJoinButton(discord.ui.Button):
-    def __init__(self):
+    def __init__(self, emoji_str: str = "🎉"):
+        btn_emoji = None
+        btn_label = "Join 🎉"
+        if emoji_str:
+            try:
+                if ":" in emoji_str:
+                    btn_emoji = discord.PartialEmoji.from_str(emoji_str.strip())
+                    btn_label = "Join"
+                else:
+                    btn_emoji = emoji_str.strip()
+                    btn_label = f"Join {emoji_str.strip()}"
+            except Exception:
+                btn_emoji = "🎉"
+                btn_label = "Join 🎉"
+
         super().__init__(
-            label="Join 🎉",
+            label=btn_label,
+            emoji=btn_emoji,
             style=discord.ButtonStyle.primary,
             custom_id="giveaway_join_btn",
         )
@@ -114,9 +129,9 @@ class GiveawayJoinButton(discord.ui.Button):
 
 
 class GiveawayView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, emoji_str: str = "🎉"):
         super().__init__(timeout=None)
-        self.add_item(GiveawayJoinButton())
+        self.add_item(GiveawayJoinButton(emoji_str))
 
 
 # ── Giveaway Cog Class ────────────────────────────────────────────────────────
@@ -128,14 +143,15 @@ class Giveaway(commands.Cog):
         self.bot = bot
         self.json_file = "database/giveaways.json"
         self._local_giveaways = {}
+        self._local_settings = {}
 
         if not os.path.exists("database"):
             os.makedirs("database")
         self._load_local_giveaways()
 
     async def cog_load(self):
-        # Register persistent view for the join button
-        self.bot.add_view(GiveawayView())
+        # Register persistent view default fallback
+        self.bot.add_view(GiveawayView("🎉"))
         self.check_giveaways.start()
 
     def cog_unload(self):
@@ -147,18 +163,67 @@ class Giveaway(commands.Cog):
         if os.path.exists(self.json_file):
             try:
                 with open(self.json_file, "r", encoding="utf-8") as f:
-                    self._local_giveaways = json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self._local_giveaways = data.get("giveaways", {})
+                        self._local_settings = data.get("settings", {})
+                    else:
+                        self._local_giveaways = {}
+                        self._local_settings = {}
             except Exception:
                 self._local_giveaways = {}
+                self._local_settings = {}
         else:
             self._local_giveaways = {}
+            self._local_settings = {}
 
     def _save_local_giveaways(self):
         try:
             with open(self.json_file, "w", encoding="utf-8") as f:
-                json.dump(self._local_giveaways, f, indent=4, ensure_ascii=False)
+                json.dump({
+                    "giveaways": self._local_giveaways,
+                    "settings": self._local_settings
+                }, f, indent=4, ensure_ascii=False)
         except Exception as e:
             log.error(f"Failed to save local giveaways: {e}")
+
+    async def get_settings(self, guild_id: int) -> dict:
+        if db._pool is not None:
+            try:
+                cfg = await db.get_guild(guild_id)
+                if cfg:
+                    res = dict(cfg)
+                    return {
+                        "giveaway_emoji": res.get("giveaway_emoji", "🎉"),
+                        "giveaway_color": res.get("giveaway_color", config.BOT_COLOR),
+                        "giveaway_ping_role_id": res.get("giveaway_ping_role_id"),
+                        "giveaway_pin": res.get("giveaway_pin", False),
+                    }
+            except Exception:
+                pass
+        # Fallback JSON
+        guild_key = str(guild_id)
+        local_cfg = self._local_settings.get(guild_key, {})
+        return {
+            "giveaway_emoji": local_cfg.get("giveaway_emoji", "🎉"),
+            "giveaway_color": local_cfg.get("giveaway_color", config.BOT_COLOR),
+            "giveaway_ping_role_id": local_cfg.get("giveaway_ping_role_id"),
+            "giveaway_pin": local_cfg.get("giveaway_pin", False),
+        }
+
+    async def save_setting(self, guild_id: int, **kwargs):
+        if db._pool is not None:
+            try:
+                await db.set_guild(guild_id, **kwargs)
+                return
+            except Exception:
+                pass
+        # Fallback JSON
+        guild_key = str(guild_id)
+        if guild_key not in self._local_settings:
+            self._local_settings[guild_key] = {}
+        self._local_settings[guild_key].update(kwargs)
+        self._save_local_giveaways()
 
     async def get_giveaway(self, message_id: int) -> dict | None:
         if db._pool is not None:
@@ -436,6 +501,11 @@ class Giveaway(commands.Cog):
         channel="The channel to host the giveaway in (default: current)",
         description="Additional description for the giveaway embed",
         host="The member hosting the giveaway (default: you)",
+        emoji="Custom button emoji (overrides server default)",
+        color="Custom embed hex color (overrides server default)",
+        ping="Whether to mention the default ping role (default: False)",
+        ping_role="Specific role to mention (overrides default ping settings)",
+        pin="Whether to pin the giveaway message (default: False)",
     )
     @app_commands.checks.has_permissions(manage_messages=True)
     async def giveaway_create(
@@ -447,6 +517,11 @@ class Giveaway(commands.Cog):
         channel: discord.TextChannel | None = None,
         description: str | None = None,
         host: discord.Member | None = None,
+        emoji: str | None = None,
+        color: str | None = None,
+        ping: bool = False,
+        ping_role: discord.Role | None = None,
+        pin: bool = False,
     ):
         target_channel = channel or interaction.channel
         giveaway_host = host or interaction.user
@@ -464,17 +539,31 @@ class Giveaway(commands.Cog):
 
         end_time = discord.utils.utcnow() + datetime.timedelta(seconds=duration_sec)
 
+        # Get settings defaults
+        g_cfg = await self.get_settings(interaction.guild_id)
+        use_emoji = emoji or g_cfg.get("giveaway_emoji", "🎉")
+        
+        # Color parsing
+        color_val = g_cfg.get("giveaway_color", config.BOT_COLOR)
+        if color:
+            clean_hex = color.replace("#", "").strip()
+            try:
+                color_val = int(clean_hex, 16)
+            except ValueError:
+                pass
+        embed_color = discord.Color(color_val)
+
         # Build initial embed
         embed = discord.Embed(
             title=f"🎉 GIVEAWAY: {prize} 🎉",
-            color=config.BOT_COLOR,
+            color=embed_color,
             timestamp=discord.utils.utcnow(),
         )
         desc = ""
         if description:
             desc += f"{description}\n\n"
         desc += (
-            f"Click the **Join 🎉** button below to enter!\n\n"
+            f"Click the **Join** button below to enter!\n\n"
             f"⌛ **Ends:** <t:{int(end_time.timestamp())}:F> (<t:{int(end_time.timestamp())}:R>)\n"
             f"👑 **Hosted By:** {giveaway_host.mention}"
         )
@@ -484,9 +573,19 @@ class Giveaway(commands.Cog):
         embed.add_field(name="Winners Count", value=f"🏆 **{winners}**", inline=True)
         embed.set_footer(text="Join before the timer ends!")
 
+        # Determine ping content
+        ping_content = ""
+        if ping_role:
+            ping_content = ping_role.mention
+        elif ping:
+            role_id = g_cfg.get("giveaway_ping_role_id")
+            if role_id:
+                ping_content = f"<@&{role_id}>"
+
         # Send to channel
         try:
-            giveaway_msg = await target_channel.send(embed=embed, view=GiveawayView())
+            view = GiveawayView(use_emoji)
+            giveaway_msg = await target_channel.send(content=ping_content if ping_content else None, embed=embed, view=view)
         except discord.Forbidden:
             await interaction.response.send_message(
                 embed=error(
@@ -496,6 +595,14 @@ class Giveaway(commands.Cog):
                 ephemeral=True,
             )
             return
+
+        # Determine auto-pin
+        should_pin = pin or g_cfg.get("giveaway_pin", False)
+        if should_pin:
+            try:
+                await giveaway_msg.pin()
+            except discord.Forbidden:
+                pass
 
         # Save to database
         await self.save_giveaway(
@@ -555,6 +662,11 @@ class Giveaway(commands.Cog):
 
         jump_url = f"https://discord.com/channels/{giveaway['guild_id']}/{giveaway['channel_id']}/{giveaway['message_id']}"
 
+        # Get settings defaults
+        g_cfg = await self.get_settings(interaction.guild_id)
+        color_val = g_cfg.get("giveaway_color", config.BOT_COLOR)
+        embed_color = discord.Color(color_val)
+
         embed = discord.Embed(
             title="📣 Ongoing Giveaway! 📣",
             description=(
@@ -563,7 +675,7 @@ class Giveaway(commands.Cog):
                 f"Hosted By: <@{giveaway['host_id']}>\n"
                 f"Ends in: <t:{int(end_time.timestamp())}:R>"
             ),
-            color=config.BOT_COLOR,
+            color=embed_color,
             timestamp=discord.utils.utcnow(),
         )
 
@@ -629,6 +741,13 @@ class Giveaway(commands.Cog):
                     )
                     disabled_view.add_item(disabled_btn)
                     await message.edit(embed=embed, view=disabled_view)
+                    
+                    # Unpin if pinned
+                    if message.pinned:
+                        try:
+                            await message.unpin()
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
@@ -671,9 +790,13 @@ class Giveaway(commands.Cog):
             "cancelled": "❌ Cancelled",
         }.get(giveaway["status"], "❓ Unknown")
 
+        g_cfg = await self.get_settings(interaction.guild_id)
+        color_val = g_cfg.get("giveaway_color", config.BOT_COLOR)
+        embed_color = discord.Color(color_val)
+
         embed = discord.Embed(
             title=f"📋 Giveaway Details — ID: {msg_id}",
-            color=config.BOT_COLOR,
+            color=embed_color,
             timestamp=discord.utils.utcnow(),
         )
         embed.add_field(name="Prize", value=giveaway["prize"], inline=True)
@@ -769,7 +892,7 @@ class Giveaway(commands.Cog):
                     if giveaway["description"]:
                         desc += f"{giveaway['description']}\n\n"
                     desc += (
-                        f"Click the **Join 🎉** button below to enter!\n\n"
+                        f"Click the **Join** button below to enter!\n\n"
                         f"⌛ **Ends:** <t:{int(end_time.timestamp())}:F> (<t:{int(end_time.timestamp())}:R>)\n"
                         f"👑 **Hosted By:** <@{giveaway['host_id']}>"
                     )
@@ -840,7 +963,7 @@ class Giveaway(commands.Cog):
                     if giveaway["description"]:
                         desc += f"{giveaway['description']}\n\n"
                     desc += (
-                        f"Click the **Join 🎉** button below to enter!\n\n"
+                        f"Click the **Join** button below to enter!\n\n"
                         f"⌛ **Ends:** <t:{int(new_end.timestamp())}:F> (<t:{int(new_end.timestamp())}:R>)\n"
                         f"👑 **Hosted By:** <@{giveaway['host_id']}>"
                     )
@@ -874,13 +997,17 @@ class Giveaway(commands.Cog):
             )
             return
 
+        g_cfg = await self.get_settings(interaction.guild_id)
+        color_val = g_cfg.get("giveaway_color", config.BOT_COLOR)
+        embed_color = discord.Color(color_val)
+
         pages = []
         chunks = [active_giveaways[i : i + 10] for i in range(0, len(active_giveaways), 10)]
 
         for chunk in chunks:
             embed = discord.Embed(
                 title="🎉 Active Server Giveaways 🎉",
-                color=config.BOT_COLOR,
+                color=embed_color,
                 timestamp=discord.utils.utcnow(),
             )
             lines = []
@@ -1046,7 +1173,6 @@ class Giveaway(commands.Cog):
                 embed = message.embeds[0]
 
                 # Update the Winners field
-                # First field is Entries, second is Winners
                 embed.set_field_at(1, name="Winners (Rerolled)", value=f"🏆 {winner_mentions}", inline=True)
                 await message.edit(embed=embed)
             except Exception as e:
