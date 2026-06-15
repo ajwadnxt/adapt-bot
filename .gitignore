@@ -1,4 +1,4 @@
-# Environment & secrets
+# Environment & secrets — NEVER commit these
 .env
 *.env
 
@@ -27,8 +27,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Bot data
+# Bot data (if you add a DB later)
 *.db
 *.sqlite3
-*.json
-*.lock
