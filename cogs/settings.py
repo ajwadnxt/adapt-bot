@@ -20,7 +20,6 @@ class SettingsSelect(discord.ui.Select):
             discord.SelectOption(label="Economy",      value="economy",    emoji="🪙",  description="Currency settings"),
             discord.SelectOption(label="Tickets",      value="tickets",    emoji="🎫",  description="Ticket system settings"),
             discord.SelectOption(label="Auto-Mod",     value="automod",    emoji="🛡️",  description="Auto-moderation settings"),
-            discord.SelectOption(label="Giveaways",    value="giveaways",  emoji="🎉",  description="Giveaway default settings"),
         ]
         super().__init__(placeholder="Select a category...", options=options)
 
@@ -104,24 +103,6 @@ class SettingsView(discord.ui.View):
             embed.add_field(name="Log Channel", value=ch(cfg["automod_log_channel_id"]), inline=True)
             words = cfg["automod_badwords_list"] or []
             embed.add_field(name=f"Bad Word List ({len(words)})", value=f"`{', '.join(words)}`" if words else "`None`", inline=False)
-        elif category == "giveaways":
-            giveaway_cog = interaction.client.get_cog("Giveaway")
-            if giveaway_cog:
-                g_cfg = await giveaway_cog.get_settings(self.guild_id)
-            else:
-                g_cfg = {
-                    "giveaway_emoji": "🎉",
-                    "giveaway_color": config.BOT_COLOR,
-                    "giveaway_ping_role_id": None,
-                    "giveaway_pin": False,
-                }
-            embed = info("Giveaway Settings")
-            embed.add_field(name="Default Emoji", value=g_cfg["giveaway_emoji"], inline=True)
-            c_val = g_cfg["giveaway_color"]
-            c_hex = hex(c_val) if isinstance(c_val, int) else str(c_val)
-            embed.add_field(name="Default Color", value=f"`{c_hex}`", inline=True)
-            embed.add_field(name="Default Ping Role", value=ro(g_cfg["giveaway_ping_role_id"]), inline=True)
-            embed.add_field(name="Auto-Pin Messages", value=bo(g_cfg["giveaway_pin"]), inline=True)
         else:
             embed = error("Unknown category")
 
@@ -154,10 +135,9 @@ class Settings(commands.Cog):
         view = SettingsView(interaction.guild_id, interaction.user.id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    # ── /set (parent group) ─────────────────────────────────────────────────
+    # ── /set general ──────────────────────────────────────────────────────────
     set_group = app_commands.Group(name="set", description="Change server settings.")
 
-    # ── /set prefix (top-level) ───────────────────────────────────────────
     @set_group.command(name="prefix", description="Set the bot's command prefix.")
     @is_admin()
     async def set_prefix(self, interaction: discord.Interaction, prefix: str):
@@ -167,13 +147,43 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, prefix=prefix)
         await interaction.response.send_message(embed=success("Prefix Updated", f"Prefix set to `{prefix}`"), ephemeral=True)
 
-    @set_group.command(name="log_channel", description="Set the event log channel.")
+    # ── /set welcome ──────────────────────────────────────────────────────────
+    @set_group.command(name="welcome_channel", description="Set the welcome message channel.")
     @is_admin()
-    async def set_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def set_welcome_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, log_channel_id=channel.id)
-        await interaction.response.send_message(embed=success("Log Channel Set", f"Events will be logged to {channel.mention}"), ephemeral=True)
+        await db.set_guild(interaction.guild_id, welcome_channel_id=channel.id)
+        await interaction.response.send_message(embed=success("Welcome Channel Set", f"Welcome messages will be sent to {channel.mention}"), ephemeral=True)
 
+    @set_group.command(name="leave_channel", description="Set the leave message channel.")
+    @is_admin()
+    async def set_leave_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        await db.ensure_guild(interaction.guild_id)
+        await db.set_guild(interaction.guild_id, leave_channel_id=channel.id)
+        await interaction.response.send_message(embed=success("Leave Channel Set", f"Leave messages will be sent to {channel.mention}"), ephemeral=True)
+
+    @set_group.command(name="welcome_message", description="Set the welcome message. Use {user}, {server}, {count}.")
+    @is_admin()
+    async def set_welcome_message(self, interaction: discord.Interaction, message: str):
+        await db.ensure_guild(interaction.guild_id)
+        await db.set_guild(interaction.guild_id, welcome_message=message)
+        await interaction.response.send_message(embed=success("Welcome Message Set", f"```{message}```"), ephemeral=True)
+
+    @set_group.command(name="leave_message", description="Set the leave message. Use {user}, {server}, {count}.")
+    @is_admin()
+    async def set_leave_message(self, interaction: discord.Interaction, message: str):
+        await db.ensure_guild(interaction.guild_id)
+        await db.set_guild(interaction.guild_id, leave_message=message)
+        await interaction.response.send_message(embed=success("Leave Message Set", f"```{message}```"), ephemeral=True)
+
+    @set_group.command(name="welcome_embed", description="Toggle whether welcome messages use an embed.")
+    @is_admin()
+    async def set_welcome_embed(self, interaction: discord.Interaction, enabled: bool):
+        await db.ensure_guild(interaction.guild_id)
+        await db.set_guild(interaction.guild_id, welcome_embed=enabled)
+        await interaction.response.send_message(embed=success("Welcome Embed", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
+
+    # ── /set moderation ───────────────────────────────────────────────────────
     @set_group.command(name="mod_log", description="Set the moderation log channel.")
     @is_admin()
     async def set_mod_log(self, interaction: discord.Interaction, channel: discord.TextChannel):
@@ -188,69 +198,37 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, mute_role_id=role.id)
         await interaction.response.send_message(embed=success("Mute Role Set", f"Mute role set to {role.mention}"), ephemeral=True)
 
-    # ── /set welcome ──────────────────────────────────────────────────────
-    set_welcome = app_commands.Group(name="welcome", description="Welcome & leave message settings.", parent=set_group)
-
-    @set_welcome.command(name="channel", description="Set the welcome message channel.")
+    # ── /set logging ──────────────────────────────────────────────────────────
+    @set_group.command(name="log_channel", description="Set the event log channel.")
     @is_admin()
-    async def set_welcome_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def set_log_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, welcome_channel_id=channel.id)
-        await interaction.response.send_message(embed=success("Welcome Channel Set", f"Welcome messages will be sent to {channel.mention}"), ephemeral=True)
+        await db.set_guild(interaction.guild_id, log_channel_id=channel.id)
+        await interaction.response.send_message(embed=success("Log Channel Set", f"Events will be logged to {channel.mention}"), ephemeral=True)
 
-    @set_welcome.command(name="leave_channel", description="Set the leave message channel.")
-    @is_admin()
-    async def set_leave_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, leave_channel_id=channel.id)
-        await interaction.response.send_message(embed=success("Leave Channel Set", f"Leave messages will be sent to {channel.mention}"), ephemeral=True)
-
-    @set_welcome.command(name="message", description="Set the welcome message. Use {user}, {server}, {count}.")
-    @is_admin()
-    async def set_welcome_message(self, interaction: discord.Interaction, message: str):
-        await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, welcome_message=message)
-        await interaction.response.send_message(embed=success("Welcome Message Set", f"```{message}```"), ephemeral=True)
-
-    @set_welcome.command(name="leave_message", description="Set the leave message. Use {user}, {server}, {count}.")
-    @is_admin()
-    async def set_leave_message(self, interaction: discord.Interaction, message: str):
-        await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, leave_message=message)
-        await interaction.response.send_message(embed=success("Leave Message Set", f"```{message}```"), ephemeral=True)
-
-    @set_welcome.command(name="embed", description="Toggle whether welcome messages use an embed.")
-    @is_admin()
-    async def set_welcome_embed(self, interaction: discord.Interaction, enabled: bool):
-        await db.ensure_guild(interaction.guild_id)
-        await db.set_guild(interaction.guild_id, welcome_embed=enabled)
-        await interaction.response.send_message(embed=success("Welcome Embed", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
-
-    # ── /set level ────────────────────────────────────────────────────────
-    set_level = app_commands.Group(name="level", description="Leveling system settings.", parent=set_group)
-
-    @set_level.command(name="toggle", description="Enable or disable the leveling system.")
+    # ── /set leveling ─────────────────────────────────────────────────────────
+    @set_group.command(name="leveling", description="Enable or disable the leveling system.")
     @is_admin()
     async def set_leveling(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, leveling_enabled=enabled)
         await interaction.response.send_message(embed=success("Leveling", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_level.command(name="channel", description="Set the level up announcement channel.")
+    @set_group.command(name="level_up_channel", description="Set the level up announcement channel.")
     @is_admin()
     async def set_level_up_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, level_up_channel_id=channel.id)
         await interaction.response.send_message(embed=success("Level Up Channel Set", f"{channel.mention}"), ephemeral=True)
 
-    @set_level.command(name="xp_cooldown", description="Set the XP cooldown in seconds.")
+    @set_group.command(name="xp_cooldown", description="Set the XP cooldown in seconds.")
     @is_admin()
     async def set_xp_cooldown(self, interaction: discord.Interaction, seconds: app_commands.Range[int, 5, 3600]):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, xp_cooldown=seconds)
         await interaction.response.send_message(embed=success("XP Cooldown Set", f"`{seconds}` seconds"), ephemeral=True)
 
-    @set_level.command(name="xp_range", description="Set the min and max XP per message.")
+    @set_group.command(name="xp_range", description="Set the min and max XP per message.")
     @is_admin()
     async def set_xp_range(self, interaction: discord.Interaction,
                            minimum: app_commands.Range[int, 1, 100],
@@ -261,107 +239,101 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, xp_min=minimum, xp_max=maximum)
         await interaction.response.send_message(embed=success("XP Range Set", f"`{minimum}–{maximum}` XP per message"), ephemeral=True)
 
-    @set_level.command(name="message", description="Set the level up message. Use {user}, {level}, {server}.")
+    @set_group.command(name="level_up_message", description="Set the level up message. Use {user}, {level}, {server}.")
     @is_admin()
     async def set_level_up_message(self, interaction: discord.Interaction, message: str):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, level_up_message=message)
         await interaction.response.send_message(embed=success("Level Up Message Set", f"```{message}```"), ephemeral=True)
 
-    # ── /set economy ──────────────────────────────────────────────────────
-    set_economy = app_commands.Group(name="economy", description="Economy system settings.", parent=set_group)
-
-    @set_economy.command(name="toggle", description="Enable or disable the economy system.")
+    # ── /set economy ──────────────────────────────────────────────────────────
+    @set_group.command(name="economy", description="Enable or disable the economy system.")
     @is_admin()
-    async def set_economy_toggle(self, interaction: discord.Interaction, enabled: bool):
+    async def set_economy(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, economy_enabled=enabled)
         await interaction.response.send_message(embed=success("Economy", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_economy.command(name="currency", description="Set the currency name and emoji.")
+    @set_group.command(name="currency", description="Set the currency name and emoji.")
     @is_admin()
     async def set_currency(self, interaction: discord.Interaction, name: str, emoji: str):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, currency_name=name, currency_emoji=emoji)
         await interaction.response.send_message(embed=success("Currency Updated", f"{emoji} `{name}`"), ephemeral=True)
 
-    @set_economy.command(name="daily_amount", description="Set how many coins users get from /daily.")
+    @set_group.command(name="daily_amount", description="Set how many coins users get from /daily.")
     @is_admin()
     async def set_daily(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100000]):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, daily_amount=amount)
         await interaction.response.send_message(embed=success("Daily Amount Set", f"`{amount}` coins"), ephemeral=True)
 
-    # ── /set ticket ───────────────────────────────────────────────────────
-    set_ticket = app_commands.Group(name="ticket", description="Ticket system settings.", parent=set_group)
-
-    @set_ticket.command(name="toggle", description="Enable or disable the ticket system.")
+    # ── /set tickets ──────────────────────────────────────────────────────────
+    @set_group.command(name="tickets", description="Enable or disable the ticket system.")
     @is_admin()
     async def set_tickets(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, ticket_enabled=enabled)
         await interaction.response.send_message(embed=success("Tickets", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_ticket.command(name="category", description="Set the category where ticket channels are created.")
+    @set_group.command(name="ticket_category", description="Set the category where ticket channels are created.")
     @is_admin()
     async def set_ticket_category(self, interaction: discord.Interaction, category: discord.CategoryChannel):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, ticket_category_id=category.id)
         await interaction.response.send_message(embed=success("Ticket Category Set", f"`{category.name}`"), ephemeral=True)
 
-    @set_ticket.command(name="log", description="Set the ticket log channel.")
+    @set_group.command(name="ticket_log", description="Set the ticket log channel.")
     @is_admin()
     async def set_ticket_log(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, ticket_log_channel_id=channel.id)
         await interaction.response.send_message(embed=success("Ticket Log Set", f"{channel.mention}"), ephemeral=True)
 
-    @set_ticket.command(name="support_role", description="Set the support role that can see tickets.")
+    @set_group.command(name="ticket_support_role", description="Set the support role that can see tickets.")
     @is_admin()
     async def set_ticket_support_role(self, interaction: discord.Interaction, role: discord.Role):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, ticket_support_role_id=role.id)
         await interaction.response.send_message(embed=success("Support Role Set", f"{role.mention}"), ephemeral=True)
 
-    @set_ticket.command(name="message", description="Set the message sent when a ticket is opened.")
+    @set_group.command(name="ticket_message", description="Set the message sent when a ticket is opened.")
     @is_admin()
     async def set_ticket_message(self, interaction: discord.Interaction, message: str):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, ticket_message=message)
         await interaction.response.send_message(embed=success("Ticket Message Set", f"```{message}```"), ephemeral=True)
 
-    # ── /set automod ──────────────────────────────────────────────────────
-    set_automod = app_commands.Group(name="automod", description="Auto-moderation settings.", parent=set_group)
-
-    @set_automod.command(name="toggle", description="Enable or disable auto-moderation.")
+    # ── /set automod ──────────────────────────────────────────────────────────
+    @set_group.command(name="automod", description="Enable or disable auto-moderation.")
     @is_admin()
-    async def set_automod_toggle(self, interaction: discord.Interaction, enabled: bool):
+    async def set_automod(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, automod_enabled=enabled)
         await interaction.response.send_message(embed=success("Auto-Mod", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_automod.command(name="antispam", description="Enable or disable anti-spam.")
+    @set_group.command(name="antispam", description="Enable or disable anti-spam.")
     @is_admin()
     async def set_antispam(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, automod_spam=enabled)
         await interaction.response.send_message(embed=success("Anti-Spam", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_automod.command(name="antilinks", description="Enable or disable anti-links.")
+    @set_group.command(name="antilinks", description="Enable or disable anti-links.")
     @is_admin()
     async def set_antilinks(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, automod_links=enabled)
         await interaction.response.send_message(embed=success("Anti-Links", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_automod.command(name="badwords", description="Enable or disable bad word filter.")
+    @set_group.command(name="badwords", description="Enable or disable bad word filter.")
     @is_admin()
     async def set_badwords(self, interaction: discord.Interaction, enabled: bool):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, automod_badwords=enabled)
         await interaction.response.send_message(embed=success("Bad Word Filter", f"{'Enabled' if enabled else 'Disabled'}"), ephemeral=True)
 
-    @set_automod.command(name="add_badword", description="Add a word to the bad word filter.")
+    @set_group.command(name="add_badword", description="Add a word to the bad word filter.")
     @is_admin()
     async def add_badword(self, interaction: discord.Interaction, word: str):
         await db.ensure_guild(interaction.guild_id)
@@ -373,7 +345,7 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, automod_badwords_list=words)
         await interaction.response.send_message(embed=success("Word Added", f"`{word}` added to the filter."), ephemeral=True)
 
-    @set_automod.command(name="remove_badword", description="Remove a word from the bad word filter.")
+    @set_group.command(name="remove_badword", description="Remove a word from the bad word filter.")
     @is_admin()
     async def remove_badword(self, interaction: discord.Interaction, word: str):
         await db.ensure_guild(interaction.guild_id)
@@ -385,59 +357,12 @@ class Settings(commands.Cog):
         await db.set_guild(interaction.guild_id, automod_badwords_list=words)
         await interaction.response.send_message(embed=success("Word Removed", f"`{word}` removed from the filter."), ephemeral=True)
 
-    @set_automod.command(name="log_channel", description="Set the auto-mod log channel.")
+    @set_group.command(name="automod_log", description="Set the auto-mod log channel.")
     @is_admin()
     async def set_automod_log(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await db.ensure_guild(interaction.guild_id)
         await db.set_guild(interaction.guild_id, automod_log_channel_id=channel.id)
         await interaction.response.send_message(embed=success("Auto-Mod Log Set", f"{channel.mention}"), ephemeral=True)
-
-    # ── /set giveaway ─────────────────────────────────────────────────────────
-    set_giveaway = app_commands.Group(name="giveaway", description="Giveaway default settings.", parent=set_group)
-
-    @set_giveaway.command(name="emoji", description="Set default emoji for giveaway join buttons.")
-    @is_admin()
-    async def set_giveaway_emoji(self, interaction: discord.Interaction, emoji: str):
-        giveaway_cog = interaction.client.get_cog("Giveaway")
-        if not giveaway_cog:
-            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
-        await giveaway_cog.save_setting(interaction.guild_id, giveaway_emoji=emoji)
-        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default join button emoji set to {emoji}"), ephemeral=True)
-
-    @set_giveaway.command(name="color", description="Set default color for giveaway embeds (Hex code).")
-    @is_admin()
-    async def set_giveaway_color(self, interaction: discord.Interaction, hex_color: str):
-        clean_hex = hex_color.replace("#", "").strip()
-        try:
-            color_int = int(clean_hex, 16)
-        except ValueError:
-            return await interaction.response.send_message(embed=error("Invalid Color", "Please provide a valid hex color code like `#FF5733`."), ephemeral=True)
-
-        giveaway_cog = interaction.client.get_cog("Giveaway")
-        if not giveaway_cog:
-            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
-        await giveaway_cog.save_setting(interaction.guild_id, giveaway_color=color_int)
-        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default embed color set to `{hex_color}`"), ephemeral=True)
-
-    @set_giveaway.command(name="ping_role", description="Set default role to mention when starting giveaways.")
-    @is_admin()
-    async def set_giveaway_ping_role(self, interaction: discord.Interaction, role: discord.Role | None = None):
-        giveaway_cog = interaction.client.get_cog("Giveaway")
-        if not giveaway_cog:
-            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
-        role_id = role.id if role else None
-        await giveaway_cog.save_setting(interaction.guild_id, giveaway_ping_role_id=role_id)
-        mention_str = role.mention if role else "None"
-        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default ping role set to {mention_str}"), ephemeral=True)
-
-    @set_giveaway.command(name="pin", description="Enable or disable pinning giveaway messages by default.")
-    @is_admin()
-    async def set_giveaway_pin(self, interaction: discord.Interaction, enabled: bool):
-        giveaway_cog = interaction.client.get_cog("Giveaway")
-        if not giveaway_cog:
-            return await interaction.response.send_message("❌ Giveaway cog is not loaded.", ephemeral=True)
-        await giveaway_cog.save_setting(interaction.guild_id, giveaway_pin=enabled)
-        await interaction.response.send_message(embed=success("Giveaway Settings", f"Default auto-pin set to **{enabled}**"), ephemeral=True)
 
     # ── Error handler ─────────────────────────────────────────────────────────
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -449,4 +374,3 @@ class Settings(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Settings(bot))
-
