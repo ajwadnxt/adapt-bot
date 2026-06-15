@@ -598,6 +598,28 @@ class Utility(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Error performing translation: `{e}`")
 
+    @app_commands.command(name="memes", description="Get a random meme from Reddit.")
+    async def memes(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        url = "https://meme-api.com/gimme"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        embed = discord.Embed(
+                            title=data.get("title", "Random Meme"),
+                            url=data.get("postLink"),
+                            color=config.BOT_COLOR,
+                        )
+                        embed.set_image(url=data.get("url"))
+                        embed.set_footer(text=f"👍 {data.get('ups')} • Subreddit: r/{data.get('subreddit')}")
+                        await interaction.followup.send(embed=embed)
+                    else:
+                        await interaction.followup.send("❌ Failed to fetch a meme from the API. Please try again later.")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error fetching meme: `{e}`")
+
     async def get_system_prompt(self, guild_id: int) -> str | None:
         try:
             if os.path.exists("database/chatbot_prompts.json"):
