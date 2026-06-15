@@ -11,7 +11,7 @@ _pool: asyncpg.Pool | None = None
 
 async def create_pool() -> asyncpg.Pool:
     global _pool
-    _pool = await asyncpg.create_pool(dsn=config.DATABASE_URL, min_size=1, max_size=5, command_timeout=60)
+    _pool = await asyncpg.create_pool(dsn=config.DATABASE_URL, min_size=1, max_size=5, command_timeout=60, statement_cache_size=0)
     log.info("✅  Database pool created")
     return _pool
 
@@ -30,8 +30,6 @@ def get_pool() -> asyncpg.Pool:
 # ── Guild Settings ────────────────────────────────────────────────────────────
 
 async def get_guild(guild_id: int) -> asyncpg.Record | None:
-    if _pool is None:
-        return None
     return await get_pool().fetchrow("SELECT * FROM guild_settings WHERE guild_id = $1", guild_id)
 
 async def ensure_guild(guild_id: int) -> asyncpg.Record:
@@ -55,8 +53,6 @@ async def set_guild(guild_id: int, **kwargs) -> None:
     )
 
 async def get_prefix(guild_id: int) -> str:
-    if _pool is None:
-        return config.PREFIX
     row = await get_guild(guild_id)
     return row["prefix"] if row else config.PREFIX
 
@@ -244,44 +240,3 @@ async def add_automod_log(guild_id, user_id, rule, content=None, action_taken=No
         "INSERT INTO automod_logs (guild_id, user_id, rule, content, action_taken) VALUES ($1,$2,$3,$4,$5)",
         guild_id, user_id, rule, content, action_taken
     )
-
-
-# ── Giveaways ─────────────────────────────────────────────────────────────────
-
-async def create_giveaway(guild_id, channel_id, message_id, prize, description, winners_count, end_time, host_id) -> None:
-    await get_pool().execute(
-        """INSERT INTO giveaways (guild_id, channel_id, message_id, prize, description, winners_count, end_time, host_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')""",
-        guild_id, channel_id, message_id, prize, description, winners_count, end_time, host_id
-    )
-
-async def get_giveaway(message_id: int) -> asyncpg.Record | None:
-    return await get_pool().fetchrow("SELECT * FROM giveaways WHERE message_id = $1", message_id)
-
-async def get_active_giveaways() -> list:
-    return await get_pool().fetch("SELECT * FROM giveaways WHERE status = 'active'")
-
-async def get_guild_giveaways(guild_id: int) -> list:
-    return await get_pool().fetch("SELECT * FROM giveaways WHERE guild_id = $1 ORDER BY end_time DESC", guild_id)
-
-async def update_giveaway(message_id: int, **kwargs) -> None:
-    if not kwargs:
-        return
-    cols = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs))
-    await get_pool().execute(
-        f"UPDATE giveaways SET {cols} WHERE message_id = $1",
-        message_id, *kwargs.values()
-    )
-
-async def add_giveaway_participant(message_id: int, user_id: int) -> None:
-    await get_pool().execute(
-        "UPDATE giveaways SET participants = array_append(COALESCE(participants, ARRAY[]::BIGINT[]), $2) WHERE message_id = $1 AND NOT ($2 = ANY(COALESCE(participants, ARRAY[]::BIGINT[])))",
-        message_id, user_id
-    )
-
-async def remove_giveaway_participant(message_id: int, user_id: int) -> None:
-    await get_pool().execute(
-        "UPDATE giveaways SET participants = array_remove(COALESCE(participants, ARRAY[]::BIGINT[]), $2) WHERE message_id = $1",
-        message_id, user_id
-    )
-
