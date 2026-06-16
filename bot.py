@@ -61,7 +61,7 @@ class MyBot(commands.Bot):
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"{len(self.guilds)} servers,/help for help",
+                name=f"{len(self.guilds)} servers | /help",
             )
         )
 
