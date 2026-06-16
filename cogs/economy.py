@@ -385,6 +385,138 @@ class Economy(commands.Cog):
         except ValueError:
             return None
 
+
+    # ── /rob ──────────────────────────────────────────────────────────────────
+    @app_commands.command(name="rob", description="Attempt to rob another member's wallet.")
+    @app_commands.describe(member="Member to rob")
+    async def rob(self, interaction: discord.Interaction, member: discord.Member):
+        cfg = await self._get_cfg(interaction.guild_id)
+        if not cfg["economy_enabled"]:
+            return await interaction.response.send_message(embed=error("Economy Disabled"), ephemeral=True)
+        if member == interaction.user or member.bot:
+            return await interaction.response.send_message(embed=error("Invalid Target"), ephemeral=True)
+
+        robber = await self._ensure(interaction.guild_id, interaction.user.id)
+        victim = await self._ensure(interaction.guild_id, member.id)
+
+        if victim["balance"] < 50:
+            return await interaction.response.send_message(
+                embed=error("Not Worth It", f"{member.mention} has less than 50 {cfg['currency_name']} in their wallet."),
+                ephemeral=True,
+            )
+
+        import random
+        success_chance = random.random()
+
+        if success_chance > 0.45:  # 55% fail rate
+            # Rob failed — pay a fine
+            fine = random.randint(50, min(200, robber["balance"])) if robber["balance"] > 0 else 0
+            if fine:
+                await db.add_balance(interaction.guild_id, interaction.user.id, -fine)
+            embed = discord.Embed(
+                title="🚔 Caught!",
+                description=f"You tried to rob {member.mention} but got caught!\n" +
+                            (f"You paid a fine of **{fine:,}** {cfg['currency_emoji']}." if fine else ""),
+                color=discord.Color.red(),
+            )
+        else:
+            # Rob succeeded
+            amount = random.randint(10, max(10, victim["balance"] // 3))
+            await db.add_balance(interaction.guild_id, member.id, -amount)
+            await db.add_balance(interaction.guild_id, interaction.user.id, amount)
+            embed = discord.Embed(
+                title="💰 Robbery Successful!",
+                description=f"You stole **{amount:,}** {cfg['currency_emoji']} from {member.mention}!",
+                color=discord.Color.green(),
+            )
+
+        await interaction.response.send_message(embed=embed)
+
+    # ── /slots ────────────────────────────────────────────────────────────────
+    @app_commands.command(name="slots", description="Play the slot machine.")
+    @app_commands.describe(bet="Amount to bet")
+    async def slots(self, interaction: discord.Interaction, bet: app_commands.Range[int, 1, 100000]):
+        cfg = await self._get_cfg(interaction.guild_id)
+        if not cfg["economy_enabled"]:
+            return await interaction.response.send_message(embed=error("Economy Disabled"), ephemeral=True)
+
+        row = await self._ensure(interaction.guild_id, interaction.user.id)
+        if bet > row["balance"]:
+            return await interaction.response.send_message(
+                embed=error("Insufficient Funds", f"You only have **{row['balance']:,}** in your wallet."), ephemeral=True
+            )
+
+        import random
+        SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎"]
+        WEIGHTS  = [30, 25, 20, 15, 7, 3]
+        reels    = random.choices(SYMBOLS, weights=WEIGHTS, k=3)
+        result   = " | ".join(reels)
+
+        if reels[0] == reels[1] == reels[2]:
+            if reels[0] == "💎":
+                mult, label = 10, "💎 JACKPOT!! 💎"
+            elif reels[0] == "⭐":
+                mult, label = 5, "⭐ BIG WIN! ⭐"
+            else:
+                mult, label = 3, "🎉 Three of a Kind!"
+        elif reels[0] == reels[1] or reels[1] == reels[2]:
+            mult, label = 1.5, "✨ Two of a Kind!"
+        else:
+            mult, label = 0, "💸 No Match"
+
+        winnings = int(bet * mult) - bet
+        await db.add_balance(interaction.guild_id, interaction.user.id, winnings)
+
+        color = discord.Color.green() if winnings > 0 else discord.Color.red() if winnings < 0 else discord.Color.greyple()
+        embed = discord.Embed(title=f"🎰 {label}", color=color)
+        embed.add_field(name="Result", value=f"**{result}**", inline=False)
+        embed.add_field(name="Bet",    value=f"`{bet:,}` {cfg['currency_emoji']}")
+        embed.add_field(
+            name="Outcome",
+            value=f"+`{winnings:,}`" if winnings > 0 else f"`{winnings:,}`" if winnings < 0 else "`0` (push)",
+        )
+        new_bal = row["balance"] + winnings
+        embed.set_footer(text=f"Balance: {new_bal:,} {cfg['currency_name']}")
+        await interaction.response.send_message(embed=embed)
+
+    # ── /coinflip ─────────────────────────────────────────────────────────────
+    @app_commands.command(name="coinflip", description="Flip a coin and bet on the outcome.")
+    @app_commands.describe(bet="Amount to bet", choice="Heads or tails")
+    @app_commands.choices(choice=[
+        app_commands.Choice(name="Heads", value="heads"),
+        app_commands.Choice(name="Tails", value="tails"),
+    ])
+    async def coinflip(self, interaction: discord.Interaction, bet: app_commands.Range[int, 1, 100000], choice: str):
+        cfg = await self._get_cfg(interaction.guild_id)
+        if not cfg["economy_enabled"]:
+            return await interaction.response.send_message(embed=error("Economy Disabled"), ephemeral=True)
+
+        row = await self._ensure(interaction.guild_id, interaction.user.id)
+        if bet > row["balance"]:
+            return await interaction.response.send_message(
+                embed=error("Insufficient Funds", f"You only have **{row['balance']:,}** in your wallet."), ephemeral=True
+            )
+
+        import random
+        result = random.choice(["heads", "tails"])
+        won    = result == choice
+
+        change = bet if won else -bet
+        await db.add_balance(interaction.guild_id, interaction.user.id, change)
+
+        embed = discord.Embed(
+            title=f"{'🪙 You Won!' if won else '💸 You Lost!'}",
+            color=discord.Color.green() if won else discord.Color.red(),
+        )
+        embed.add_field(name="Coin",   value=f"{'🌕 Heads' if result == 'heads' else '🌑 Tails'}")
+        embed.add_field(name="Your Pick", value=choice.title())
+        embed.add_field(
+            name="Outcome",
+            value=f"+`{bet:,}`" if won else f"-`{bet:,}`",
+        )
+        embed.set_footer(text=f"Balance: {row['balance'] + change:,} {cfg['currency_name']}")
+        await interaction.response.send_message(embed=embed)
+
     async def cog_app_command_error(self, interaction: discord.Interaction, err: app_commands.AppCommandError):
         msg = "You don't have permission." if isinstance(err, app_commands.MissingPermissions) else f"`{err}`"
         if interaction.response.is_done():
