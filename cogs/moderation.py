@@ -6,6 +6,7 @@ from database import db
 from utils.checks import is_mod, is_admin
 from utils.embeds import mod_action, error, success, info
 from utils.paginator import Paginator
+import config
 
 
 async def send_mod_log(guild: discord.Guild, embed: discord.Embed):
@@ -370,6 +371,100 @@ class Moderation(commands.Cog):
         await target.set_permissions(interaction.guild.default_role, overwrite=overwrite)
         await interaction.response.send_message(embed=success("Channel Unlocked", f"🔓 {target.mention} is now unlocked."))
 
+
+    # ── /case ─────────────────────────────────────────────────────────────────
+    @app_commands.command(name="case", description="View a specific mod log case by ID.")
+    @app_commands.describe(case_id="The case ID to look up")
+    @is_mod()
+    async def case(self, interaction: discord.Interaction, case_id: int):
+        from database.db import get_pool
+        row = await get_pool().fetchrow(
+            "SELECT * FROM mod_logs WHERE id=$1 AND guild_id=$2", case_id, interaction.guild_id
+        )
+        if not row:
+            return await interaction.response.send_message(
+                embed=error("Not Found", f"No case with ID `#{case_id}` found."), ephemeral=True
+            )
+        icons = {"ban":"🔨","kick":"👢","mute":"🔇","warn":"⚠️","timeout":"⏱️","unban":"✅","unmute":"🔊"}
+        embed = discord.Embed(
+            title=f"{icons.get(row['action'],'📋')} Case #{row['id']} — {row['action'].title()}",
+            color=config.BOT_COLOR,
+        )
+        embed.add_field(name="Target",    value=f"<@{row['target_id']}> (`{row['target_id']}`)")
+        embed.add_field(name="Moderator", value=f"<@{row['moderator_id']}>")
+        embed.add_field(name="Reason",    value=row["reason"] or "No reason provided", inline=False)
+        if row["duration"]:
+            embed.add_field(name="Duration", value=f"{row['duration']} minute(s)")
+        embed.set_footer(text=discord.utils.format_dt(row["created_at"], "F"))
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ── /reason ───────────────────────────────────────────────────────────────
+    @app_commands.command(name="reason", description="Edit the reason for a mod log case.")
+    @app_commands.describe(case_id="The case ID to edit", reason="New reason")
+    @is_mod()
+    async def reason(self, interaction: discord.Interaction, case_id: int, reason: str):
+        row = await get_pool().fetchrow(
+            "SELECT * FROM mod_logs WHERE id=$1 AND guild_id=$2", case_id, interaction.guild_id
+        )
+        if not row:
+            return await interaction.response.send_message(
+                embed=error("Not Found", f"No case with ID `#{case_id}` found."), ephemeral=True
+            )
+        await get_pool().execute("UPDATE mod_logs SET reason=$1 WHERE id=$2", reason, case_id)
+        embed = success("Reason Updated", f"Case `#{case_id}` reason updated.")
+        embed.add_field(name="New Reason", value=reason, inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ── /history ──────────────────────────────────────────────────────────────
+    @app_commands.command(name="history", description="View your own moderation history.")
+    async def history(self, interaction: discord.Interaction):
+        rows = await db.get_mod_logs(interaction.guild_id, interaction.user.id)
+        if not rows:
+            return await interaction.response.send_message(
+                embed=info("Clean Record", "You have no moderation history in this server."), ephemeral=True
+            )
+        pages  = []
+        chunks = [rows[i:i+5] for i in range(0, len(rows), 5)]
+        for chunk in chunks:
+            embed = discord.Embed(title="📋 Your Mod History", color=config.BOT_COLOR)
+            for row in chunk:
+                value = f"**Reason:** {row['reason'] or 'None'}"
+                if row["duration"]:
+                    value += f"\n**Duration:** {row['duration']}m"
+                embed.add_field(
+                    name=f"#{row['id']} {row['action'].upper()} — {row['created_at'].strftime('%Y-%m-%d')}",
+                    value=value, inline=False,
+                )
+            pages.append(embed)
+        if len(pages) == 1:
+            await interaction.response.send_message(embed=pages[0], ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=pages[0], view=Paginator(pages, interaction.user.id), ephemeral=True)
+
+    # ── /massban ──────────────────────────────────────────────────────────────
+    @app_commands.command(name="massban", description="Ban multiple users by ID (space separated).")
+    @app_commands.describe(user_ids="Space-separated list of user IDs", reason="Reason for the ban")
+    @app_commands.checks.has_permissions(ban_members=True)
+    async def massban(self, interaction: discord.Interaction, user_ids: str, reason: str = "Mass ban"):
+        await interaction.response.defer()
+        ids    = [uid.strip() for uid in user_ids.split() if uid.strip().isdigit()]
+        banned = []
+        failed = []
+        for uid in ids[:20]:
+            try:
+                user = await self.bot.fetch_user(int(uid))
+                await interaction.guild.ban(user, reason=reason)
+                await db.add_mod_log(interaction.guild_id, user.id, interaction.user.id, "ban", reason)
+                banned.append(f"`{user}`")
+            except Exception:
+                failed.append(f"`{uid}`")
+        embed = discord.Embed(title="🔨 Mass Ban Complete", color=discord.Color.red())
+        embed.add_field(name=f"✅ Banned ({len(banned)})", value="\n".join(banned) or "None", inline=False)
+        if failed:
+            embed.add_field(name=f"❌ Failed ({len(failed)})", value="\n".join(failed), inline=False)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        await interaction.followup.send(embed=embed)
+
     # ── Helper ────────────────────────────────────────────────────────────────
     async def _can_action(self, interaction: discord.Interaction, member: discord.Member) -> bool:
         """Check role hierarchy before taking a mod action."""
@@ -403,4 +498,3 @@ class Moderation(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Moderation(bot))
