@@ -67,7 +67,7 @@ class Economy(commands.Cog):
         row = await self._ensure(interaction.guild_id, interaction.user.id)
 
         if row["last_daily"]:
-            elapsed = (datetime.datetime.now(datetime.timezone.utc) - row["last_daily"]).total_seconds()
+            elapsed = (datetime.datetime.now(datetime.timezone.utc) - row["last_daily"].replace(tzinfo=datetime.timezone.utc) if row["last_daily"].tzinfo is None else row["last_daily"]).total_seconds()
             if elapsed < DAILY_COOLDOWN:
                 remaining = int(DAILY_COOLDOWN - elapsed)
                 h, m = divmod(remaining // 60, 60)
@@ -95,7 +95,7 @@ class Economy(commands.Cog):
         row = await self._ensure(interaction.guild_id, interaction.user.id)
 
         if row["last_work"]:
-            elapsed = (datetime.datetime.now(datetime.timezone.utc) - row["last_work"]).total_seconds()
+            elapsed = (datetime.datetime.now(datetime.timezone.utc) - row["last_work"].replace(tzinfo=datetime.timezone.utc) if row["last_work"].tzinfo is None else row["last_work"]).total_seconds()
             if elapsed < WORK_COOLDOWN:
                 remaining = int(WORK_COOLDOWN - elapsed)
                 m, s = divmod(remaining // 60, 60)
