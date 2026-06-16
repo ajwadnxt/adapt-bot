@@ -57,6 +57,7 @@ class AdaptBot(commands.Bot):
             ("cogs.customcmds",  config.ENABLE_CUSTOMCMDS),
             ("cogs.developer",   config.ENABLE_DEVELOPER),
             ("cogs.giveaway",    config.ENABLE_GIVEAWAY),
+            ("cogs.games",       config.ENABLE_GAMES),
         ]
         for cog, enabled in cogs:
             if not enabled:
