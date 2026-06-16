@@ -1,8 +1,10 @@
 import discord
 from discord.ext import commands
 from database import db
-from utils.embeds import error
 import config
+import logging
+
+log = logging.getLogger("welcome")
 
 
 def format_message(template: str, member: discord.Member) -> str:
@@ -23,24 +25,29 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        await self._handle_join(member)
+        try:
+            await self._handle_join(member)
+        except Exception as e:
+            log.error(f"Error in on_member_join for {member}: {e}")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        await self._handle_leave(member)
+        try:
+            await self._handle_leave(member)
+        except Exception as e:
+            log.error(f"Error in on_member_remove for {member}: {e}")
 
     async def _handle_join(self, member: discord.Member):
         cfg = await db.ensure_guild(member.guild.id)
 
         # ── Auto-roles ────────────────────────────────────────────────────────
-        auto_roles = cfg["auto_role_ids"] or []
-        for role_id in auto_roles:
+        for role_id in (cfg["auto_role_ids"] or []):
             role = member.guild.get_role(role_id)
-            if role:
+            if role and role < member.guild.me.top_role:
                 try:
                     await member.add_roles(role, reason="Auto-role on join")
-                except discord.Forbidden:
-                    pass
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    log.warning(f"Could not assign auto-role {role_id}: {e}")
 
         # ── Welcome message ───────────────────────────────────────────────────
         channel_id = cfg["welcome_channel_id"]
@@ -48,10 +55,15 @@ class Welcome(commands.Cog):
             return
 
         channel = member.guild.get_channel(channel_id)
-        if not channel:
+        if not isinstance(channel, discord.TextChannel):
             return
 
-        text = format_message(cfg["welcome_message"], member)
+        # Check bot can send in that channel
+        if not channel.permissions_for(member.guild.me).send_messages:
+            log.warning(f"No permission to send welcome in #{channel.name}")
+            return
+
+        text = format_message(cfg["welcome_message"] or "Welcome {user} to {server}!", member)
 
         if cfg["welcome_embed"]:
             embed = discord.Embed(
@@ -73,15 +85,16 @@ class Welcome(commands.Cog):
             return
 
         channel = member.guild.get_channel(channel_id)
-        if not channel:
+        if not isinstance(channel, discord.TextChannel):
             return
 
-        text = format_message(cfg["leave_message"], member)
+        if not channel.permissions_for(member.guild.me).send_messages:
+            log.warning(f"No permission to send leave message in #{channel.name}")
+            return
 
-        embed = discord.Embed(
-            description=text,
-            color=discord.Color.greyple(),
-        )
+        text = format_message(cfg["leave_message"] or "Goodbye {user}!", member)
+
+        embed = discord.Embed(description=text, color=discord.Color.greyple())
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"{member.guild.member_count} members remaining")
         await channel.send(embed=embed)
