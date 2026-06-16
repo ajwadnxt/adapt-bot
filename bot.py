@@ -3,8 +3,8 @@ import logging
 import discord
 from discord.ext import commands
 import config
+from database.db import create_pool, close_pool
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -12,49 +12,70 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
-# ─── Intents ──────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
-intents.message_content = True   # Required for prefix commands + reading messages
-intents.members = True           # Required for member-related mod actions
+intents.message_content = True
+intents.members = True
 
 
-# ─── Bot Subclass ─────────────────────────────────────────────────────────────
-class MyBot(commands.Bot):
+class AdaptBot(commands.Bot):
     def __init__(self):
         super().__init__(
-            command_prefix=config.PREFIX,
+            command_prefix=self._get_prefix,
             intents=intents,
-            help_command=None,          # We'll add a custom one later
+            help_command=None,
+            owner_ids=set(config.OWNER_IDS),
         )
 
-    # Called once, before the bot connects — good place to set up DB pools etc.
+    async def _get_prefix(self, bot, message: discord.Message):
+        if not message.guild:
+            return config.PREFIX
+        from database.db import get_prefix
+        return await get_prefix(message.guild.id)
+
     async def setup_hook(self):
+        if config.DATABASE_URL:
+            self.db_pool = await create_pool()
+        else:
+            log.warning("⚠️  DATABASE_URL not set — running without database")
+            self.db_pool = None
         await self._load_cogs()
         await self._sync_commands()
 
     async def _load_cogs(self):
-        cogs = ["cogs.general"]
-        if config.ENABLE_MODERATION:
-            cogs.append("cogs.moderation")
-        if config.ENABLE_UTILITY:
-            cogs.append("cogs.utility")
-
-        for cog in cogs:
+        cogs = [
+            ("cogs.general",     True),
+            ("cogs.utility",     config.ENABLE_UTILITY),
+            ("cogs.settings",    config.ENABLE_SETTINGS),
+            ("cogs.moderation",  config.ENABLE_MODERATION),
+            ("cogs.welcome",     config.ENABLE_WELCOME),
+            ("cogs.logging",     config.ENABLE_LOGGING),
+            ("cogs.leveling",    config.ENABLE_LEVELING),
+            ("cogs.economy",     config.ENABLE_ECONOMY),
+            ("cogs.tickets",     config.ENABLE_TICKETS),
+            ("cogs.automod",     config.ENABLE_AUTOMOD),
+            ("cogs.roles",       config.ENABLE_ROLES),
+            ("cogs.customcmds",  config.ENABLE_CUSTOMCMDS),
+            ("cogs.developer",   config.ENABLE_DEVELOPER),
+            ("cogs.giveaway",    config.ENABLE_GIVEAWAY),
+        ]
+        for cog, enabled in cogs:
+            if not enabled:
+                continue
             try:
                 await self.load_extension(cog)
-                log.info(f"✅  Loaded cog: {cog}")
+                log.info(f"✅  Loaded: {cog}")
             except Exception as e:
-                log.error(f"❌  Failed to load cog {cog}: {e}")
+                log.error(f"❌  Failed to load {cog}: {e}")
 
     async def _sync_commands(self):
         if config.GUILD_ID:
             guild = discord.Object(id=config.GUILD_ID)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            log.info(f"⚡  Slash commands synced to dev guild {config.GUILD_ID}")
-        else:
-            await self.tree.sync()
-            log.info("🌐  Slash commands synced globally (may take up to 1 hour)")
+            log.info(f"⚡  Commands synced to guild {config.GUILD_ID}")
+        # Uncomment for production global sync:
+        # else:
+        #     await self.tree.sync()
 
     async def on_ready(self):
         log.info(f"🤖  Logged in as {self.user} (ID: {self.user.id})")
@@ -67,17 +88,19 @@ class MyBot(commands.Bot):
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         if isinstance(error, commands.CommandNotFound):
-            return  # Silently ignore unknown prefix commands
-        log.error(f"Prefix command error in {ctx.command}: {error}")
+            return
+        log.error(f"Command error in {ctx.command}: {error}")
+
+    async def close(self):
+        await close_pool()
+        await super().close()
 
 
-# ─── Entry Point ──────────────────────────────────────────────────────────────
 async def main():
     if not config.TOKEN:
-        log.critical("DISCORD_TOKEN is not set. Check your .env file.")
+        log.critical("DISCORD_TOKEN is not set.")
         return
-
-    async with MyBot() as bot:
+    async with AdaptBot() as bot:
         await bot.start(config.TOKEN)
 
 
