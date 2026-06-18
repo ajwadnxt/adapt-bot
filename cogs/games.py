@@ -828,9 +828,11 @@ class Games(commands.Cog):
         view  = DiceDuelView(interaction.user, member, bet, interaction.guild_id)
         embed = discord.Embed(
             title="🎲 Dice Duel",
-            description=f"{interaction.user.mention} has challenged {member.mention}!\n"
-                        f"{'Bet: **' + str(bet) + '** coins\n' if bet > 0 else ''}"
-                        f"Both players press **Roll Dice** to roll!",
+            description=(
+                f"{interaction.user.mention} has challenged {member.mention}!\n"
+                + (f'Bet: **{bet}** coins\n' if bet > 0 else '')
+                + 'Both players press **Roll Dice** to roll!'
+            ),
             color=discord.Color.blurple(),
         )
         await interaction.response.send_message(embed=embed, view=view)
@@ -849,7 +851,7 @@ class Games(commands.Cog):
         view  = HorseRaceView(interaction.user.id, bet, interaction.guild_id)
         embed = discord.Embed(
             title="🐴 Horse Racing",
-            description=f"{'Bet: **' + str(bet) + '** coins — p' if bet > 0 else 'P'}ick your horse!",
+            description=(f'Bet: **{bet}** coins — pick your horse!' if bet > 0 else 'Pick your horse!'),
             color=discord.Color.blurple(),
         )
         for emoji, name in zip(HORSES, HORSE_NAMES):
