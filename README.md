@@ -11,3 +11,45 @@
 [![discord.py](https://img.shields.io/badge/discord.py-2.0%2B-blue)](https://github.com/Rapptz/discord.py)
 
 A fully customizable, multipurpose Discord bot engineered to mold perfectly to your server's unique identity.
+
+Built with Python and discord.py. Engineered with modular architecture for scalability, readability, and ease of contribution.
+
+---
+
+## ✨ Features
+
+### 🛡️ Moderation
+- Auto-moderation with customizable filters
+- Warning and infraction system
+- Mute, kick, ban, and timeout commands
+- Audit logging for full transparency
+- Anti-raid and anti-spam protection
+
+### 🎯 Utility
+- Custom command creation
+- Welcome and farewell messages
+- Ticket system for support
+- Advanced logging (moderation, message, voice, join/leave)
+- Server information and statistics
+- Role management and auto-roles
+- Reminders and giveaways
+
+### 🎮 Fun & Engagement
+- Leveling and XP system with leaderboards
+- Economy system with virtual currency
+- Shop and inventory management
+- Mini-games and interactive commands
+- Reaction roles
+- Polls and voting
+
+### ⚙️ Automation
+- Scheduled tasks and announcements
+- Auto-responses and triggers
+- Auto-moderation workflows
+- Custom automation rules
+
+### 🔧 Administration
+- Server backup and restore
+- Bulk message management
+- Prefix customization
+- Dashboard configuration (coming soon)
