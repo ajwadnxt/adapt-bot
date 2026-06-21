@@ -2,7 +2,7 @@
 
 **A.D.A.P.T.** — *Advanced Dynamic Autonomous Process Tool*
 
-[![Discord](https://img.shields.io/discord/your-invite-code?color=5865F2&label=Support&logo=discord&logoColor=white)](https://discord.gg/your-invite-link)
+[![Discord](https://img.shields.io/discord/your-invite-code?color=5865F2&label=Support&logo=discord&logoColor=white)](https://discord.gg/7zcrejJ5SP)
 [![GitHub stars](https://img.shields.io/github/stars/ajwadnxt/adapt-bot)](https://github.com/ajwadnxt/adapt-bot/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/ajwadnxt/adapt-bot)](https://github.com/ajwadnxt/adapt-bot/network)
 [![GitHub issues](https://img.shields.io/github/issues/ajwadnxt/adapt-bot)](https://github.com/ajwadnxt/adapt-bot/issues)
