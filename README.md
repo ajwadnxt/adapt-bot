@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/github/license/ajwadnxt/adapt-bot)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://python.org/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.0%2B-blue)](https://github.com/Rapptz/discord.py)
-[![Discord Bots](https://top.gg/api/widget/1514625161654046750.svg)(https://top.gg//bot/1514625161654046750)]
+[![Discord Bots](https://top.gg/api/widget/1514625161654046750.svg)(https://top.gg//bot/1514625161654046750)
 
 A fully customizable, multipurpose Discord bot engineered to mold perfectly to your server's unique identity.
 
