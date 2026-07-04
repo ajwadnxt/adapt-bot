@@ -58,6 +58,7 @@ class AdaptBot(commands.Bot):
             ("cogs.developer",   config.ENABLE_DEVELOPER),
             ("cogs.giveaway",    config.ENABLE_GIVEAWAY),
             ("cogs.games",       config.ENABLE_GAMES),
+            ("cogs.music",       config.ENABLE_MUSIC),
         ]
         for cog, enabled in cogs:
             if not enabled:
@@ -74,7 +75,7 @@ class AdaptBot(commands.Bot):
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             log.info(f"⚡  Commands synced to guild {config.GUILD_ID}")
-        # Uncomment for production global sync:
+        # Uncomment for production:
         # else:
         #     await self.tree.sync()
 
