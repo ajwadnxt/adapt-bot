@@ -15,6 +15,11 @@ BOT_NAME    = "Adapt"
 BOT_COLOR   = 0x5990FD
 BOT_VERSION = "2.0.0"
 
+# ─── Lavalink ─────────────────────────────────────────────────────────────────
+# Free public node — swap for your own if you self-host
+LAVALINK_URI      = os.getenv("LAVALINK_URI",      "wss://lavalink.clxud.dev:443")
+LAVALINK_PASSWORD = os.getenv("LAVALINK_PASSWORD", "youshallnotpass")
+
 # ─── Feature Flags ────────────────────────────────────────────────────────────
 ENABLE_MODERATION  = True
 ENABLE_UTILITY     = True
@@ -30,3 +35,4 @@ ENABLE_SETTINGS    = True
 ENABLE_DEVELOPER   = True
 ENABLE_GIVEAWAY    = True
 ENABLE_GAMES       = True
+ENABLE_MUSIC       = True
