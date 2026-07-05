@@ -241,16 +241,17 @@ class Tickets(commands.Cog):
         bot.add_view(TopicButtonView())
 
     async def cog_load(self):
-        """
-        Re-attach TicketControlView to every open ticket message after restart.
-        This is the key fix — without this, existing ticket messages lose their buttons.
-        """
+        """Schedule view restoration as a background task after bot is ready."""
+        self.bot.loop.create_task(self._restore_views())
+
+    async def _restore_views(self):
+        """Re-attach TicketControlView to all open ticket messages after restart."""
         await self.bot.wait_until_ready()
+        import logging
+        log = logging.getLogger("tickets")
         try:
             pool = db.get_pool()
-            open_tickets = await pool.fetch(
-                "SELECT * FROM tickets WHERE status='open'"
-            )
+            open_tickets = await pool.fetch("SELECT * FROM tickets WHERE status='open'")
             for ticket in open_tickets:
                 guild   = self.bot.get_guild(ticket["guild_id"])
                 if not guild:
@@ -258,7 +259,6 @@ class Tickets(commands.Cog):
                 channel = guild.get_channel(ticket["channel_id"])
                 if not channel:
                     continue
-                # Find the first bot message in the ticket channel (the welcome embed)
                 try:
                     async for message in channel.history(limit=5, oldest_first=True):
                         if message.author == guild.me and message.embeds:
@@ -266,9 +266,9 @@ class Tickets(commands.Cog):
                             break
                 except (discord.Forbidden, discord.HTTPException):
                     pass
+            log.info(f"Restored views for {len(open_tickets)} open ticket(s).")
         except Exception as e:
-            import logging
-            logging.getLogger("tickets").warning(f"Could not restore ticket views: {e}")
+            log.warning(f"Could not restore ticket views: {e}")
 
     # ── /ticket panel ─────────────────────────────────────────────────────────
     ticket_group = app_commands.Group(name="ticket", description="Ticket system commands.")
