@@ -8,11 +8,11 @@ from utils.embeds import success, error, info
 import config
 
 
-# ── Close Ticket View ─────────────────────────────────────────────────────────
+# ── Ticket Control View (Close + Claim buttons) ───────────────────────────────
 
 class TicketControlView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)  # Persistent across restarts
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="Close Ticket", emoji="🔒", style=discord.ButtonStyle.red, custom_id="ticket:close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -20,12 +20,11 @@ class TicketControlView(discord.ui.View):
         if not ticket:
             return await interaction.response.send_message(embed=error("Not a ticket channel."), ephemeral=True)
 
-        # Check permissions — ticket owner or support role or mod
-        cfg = await db.get_guild(interaction.guild_id)
+        cfg        = await db.get_guild(interaction.guild_id)
         is_support = False
         if cfg and cfg["ticket_support_role_id"]:
-            support_role = interaction.guild.get_role(cfg["ticket_support_role_id"])
-            if support_role and support_role in interaction.user.roles:
+            role = interaction.guild.get_role(cfg["ticket_support_role_id"])
+            if role and role in interaction.user.roles:
                 is_support = True
 
         if (interaction.user.id != ticket["user_id"]
@@ -38,12 +37,11 @@ class TicketControlView(discord.ui.View):
         await interaction.response.send_message(embed=info("Closing ticket in 5 seconds..."))
         await db.close_ticket(interaction.channel_id)
 
-        # Log closure
         if cfg and cfg["ticket_log_channel_id"]:
             log_ch = interaction.guild.get_channel(cfg["ticket_log_channel_id"])
             if log_ch:
                 embed = discord.Embed(title="🎫 Ticket Closed", color=discord.Color.red())
-                embed.add_field(name="Channel",  value=interaction.channel.name)
+                embed.add_field(name="Channel",   value=interaction.channel.name)
                 embed.add_field(name="Opened by", value=f"<@{ticket['user_id']}>")
                 embed.add_field(name="Closed by", value=interaction.user.mention)
                 embed.add_field(name="Topic",     value=ticket["topic"] or "None", inline=False)
@@ -60,7 +58,7 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="Claim", emoji="🙋", style=discord.ButtonStyle.green, custom_id="ticket:claim")
     async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = await db.get_guild(interaction.guild_id)
+        cfg        = await db.get_guild(interaction.guild_id)
         is_support = False
         if cfg and cfg["ticket_support_role_id"]:
             role = interaction.guild.get_role(cfg["ticket_support_role_id"])
@@ -79,22 +77,20 @@ class TicketControlView(discord.ui.View):
         await interaction.message.edit(view=self)
 
 
-# ── Create Ticket Button ──────────────────────────────────────────────────────
+# ── Create Ticket Button View ─────────────────────────────────────────────────
 
 class CreateTicketView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)  # Persistent
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="Create Ticket", emoji="🎫", style=discord.ButtonStyle.blurple, custom_id="ticket:create")
     async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-
         cfg = await db.ensure_guild(interaction.guild_id)
 
         if not cfg["ticket_enabled"]:
             return await interaction.followup.send(embed=error("Tickets are disabled."), ephemeral=True)
 
-        # Check for existing open ticket
         existing = await db.get_user_open_ticket(interaction.guild_id, interaction.user.id)
         if existing:
             ch = interaction.guild.get_channel(existing["channel_id"])
@@ -103,23 +99,17 @@ class CreateTicketView(discord.ui.View):
                     embed=error("Already Open", f"You already have an open ticket: {ch.mention}"), ephemeral=True
                 )
 
-        # Get category
-        category = None
-        if cfg["ticket_category_id"]:
-            category = interaction.guild.get_channel(cfg["ticket_category_id"])
-
-        # Build permission overwrites
+        category = interaction.guild.get_channel(cfg["ticket_category_id"]) if cfg["ticket_category_id"] else None
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+            interaction.user:               discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            interaction.guild.me:           discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
         }
         if cfg["ticket_support_role_id"]:
-            support_role = interaction.guild.get_role(cfg["ticket_support_role_id"])
-            if support_role:
-                overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            role = interaction.guild.get_role(cfg["ticket_support_role_id"])
+            if role:
+                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
-        # Create channel
         try:
             channel = await interaction.guild.create_text_channel(
                 name=f"ticket-{interaction.user.name}",
@@ -134,7 +124,6 @@ class CreateTicketView(discord.ui.View):
 
         ticket_id = await db.create_ticket(interaction.guild_id, channel.id, interaction.user.id)
 
-        # Send welcome embed in ticket channel
         embed = discord.Embed(
             title=f"🎫 Ticket #{ticket_id}",
             description=cfg["ticket_message"],
@@ -142,25 +131,24 @@ class CreateTicketView(discord.ui.View):
         )
         embed.add_field(name="Opened by", value=interaction.user.mention)
         embed.set_footer(text="Click 🔒 to close this ticket.")
+
         await channel.send(
             content=interaction.user.mention,
             embed=embed,
             view=TicketControlView(),
         )
 
-        # Log ticket creation
         if cfg["ticket_log_channel_id"]:
             log_ch = interaction.guild.get_channel(cfg["ticket_log_channel_id"])
             if log_ch:
                 log_embed = discord.Embed(title="🎫 Ticket Opened", color=discord.Color.green())
-                log_embed.add_field(name="Channel",  value=channel.mention)
+                log_embed.add_field(name="Channel",   value=channel.mention)
                 log_embed.add_field(name="Opened by", value=interaction.user.mention)
                 log_embed.timestamp = datetime.datetime.utcnow()
                 await log_ch.send(embed=log_embed)
 
         await interaction.followup.send(
-            embed=success("Ticket Created", f"Your ticket has been created: {channel.mention}"),
-            ephemeral=True,
+            embed=success("Ticket Created", f"Your ticket: {channel.mention}"), ephemeral=True
         )
 
 
@@ -177,8 +165,8 @@ class TicketTopicModal(discord.ui.Modal, title="Create a Ticket"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # Reuse CreateTicketView logic but with topic stored
         cfg = await db.ensure_guild(interaction.guild_id)
+
         if not cfg["ticket_enabled"]:
             return await interaction.followup.send(embed=error("Tickets are disabled."), ephemeral=True)
 
@@ -193,8 +181,8 @@ class TicketTopicModal(discord.ui.Modal, title="Create a Ticket"):
         category = interaction.guild.get_channel(cfg["ticket_category_id"]) if cfg["ticket_category_id"] else None
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            interaction.guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+            interaction.user:               discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            interaction.guild.me:           discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
         }
         if cfg["ticket_support_role_id"]:
             role = interaction.guild.get_role(cfg["ticket_support_role_id"])
@@ -211,7 +199,9 @@ class TicketTopicModal(discord.ui.Modal, title="Create a Ticket"):
         except discord.Forbidden:
             return await interaction.followup.send(embed=error("Missing Permissions"), ephemeral=True)
 
-        ticket_id = await db.create_ticket(interaction.guild_id, channel.id, interaction.user.id, topic=self.topic.value)
+        ticket_id = await db.create_ticket(
+            interaction.guild_id, channel.id, interaction.user.id, topic=self.topic.value
+        )
 
         embed = discord.Embed(
             title=f"🎫 Ticket #{ticket_id}",
@@ -222,10 +212,20 @@ class TicketTopicModal(discord.ui.Modal, title="Create a Ticket"):
         embed.add_field(name="Topic",     value=self.topic.value, inline=False)
         embed.set_footer(text="Click 🔒 to close this ticket.")
         await channel.send(content=interaction.user.mention, embed=embed, view=TicketControlView())
-
         await interaction.followup.send(
             embed=success("Ticket Created", f"Your ticket: {channel.mention}"), ephemeral=True
         )
+
+
+# ── Topic Panel Button ────────────────────────────────────────────────────────
+
+class TopicButtonView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Create Ticket", emoji="🎫", style=discord.ButtonStyle.blurple, custom_id="ticket:create_topic")
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TicketTopicModal())
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
@@ -235,9 +235,40 @@ class Tickets(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # Register persistent views so buttons work after restart
+        # Register all persistent views immediately so buttons work after restart
         bot.add_view(CreateTicketView())
         bot.add_view(TicketControlView())
+        bot.add_view(TopicButtonView())
+
+    async def cog_load(self):
+        """
+        Re-attach TicketControlView to every open ticket message after restart.
+        This is the key fix — without this, existing ticket messages lose their buttons.
+        """
+        await self.bot.wait_until_ready()
+        try:
+            pool = db.get_pool()
+            open_tickets = await pool.fetch(
+                "SELECT * FROM tickets WHERE status='open'"
+            )
+            for ticket in open_tickets:
+                guild   = self.bot.get_guild(ticket["guild_id"])
+                if not guild:
+                    continue
+                channel = guild.get_channel(ticket["channel_id"])
+                if not channel:
+                    continue
+                # Find the first bot message in the ticket channel (the welcome embed)
+                try:
+                    async for message in channel.history(limit=5, oldest_first=True):
+                        if message.author == guild.me and message.embeds:
+                            await message.edit(view=TicketControlView())
+                            break
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+        except Exception as e:
+            import logging
+            logging.getLogger("tickets").warning(f"Could not restore ticket views: {e}")
 
     # ── /ticket panel ─────────────────────────────────────────────────────────
     ticket_group = app_commands.Group(name="ticket", description="Ticket system commands.")
@@ -265,7 +296,6 @@ class Tickets(commands.Cog):
             embed=success("Panel Sent", f"Ticket panel sent to {channel.mention}."), ephemeral=True
         )
 
-    # ── /ticket panel_with_topic ───────────────────────────────────────────────
     @ticket_group.command(name="panel_topic", description="Send a ticket panel that asks for a topic.")
     @app_commands.describe(channel="Channel to send the panel to")
     @is_admin()
@@ -275,14 +305,6 @@ class Tickets(commands.Cog):
             return await interaction.response.send_message(
                 embed=error("Tickets Disabled", "Enable tickets first with `/set tickets true`."), ephemeral=True
             )
-
-        class TopicButtonView(discord.ui.View):
-            def __init__(self):
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="Create Ticket", emoji="🎫", style=discord.ButtonStyle.blurple, custom_id="ticket:create_topic")
-            async def open_modal(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
-                await btn_interaction.response.send_modal(TicketTopicModal())
 
         embed = discord.Embed(
             title="🎫 Support Tickets",
@@ -294,7 +316,6 @@ class Tickets(commands.Cog):
             embed=success("Panel Sent", f"Topic panel sent to {channel.mention}."), ephemeral=True
         )
 
-    # ── /ticket close ─────────────────────────────────────────────────────────
     @ticket_group.command(name="close", description="Close the current ticket.")
     @is_mod()
     async def ticket_close(self, interaction: discord.Interaction):
@@ -306,7 +327,6 @@ class Tickets(commands.Cog):
 
         await interaction.response.send_message(embed=info("Closing ticket in 5 seconds..."))
         await db.close_ticket(interaction.channel_id)
-
         await discord.utils.sleep_until(
             datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5)
         )
@@ -315,7 +335,6 @@ class Tickets(commands.Cog):
         except discord.Forbidden:
             pass
 
-    # ── /ticket add ───────────────────────────────────────────────────────────
     @ticket_group.command(name="add", description="Add a member to the current ticket.")
     @app_commands.describe(member="Member to add")
     @is_mod()
@@ -325,18 +344,13 @@ class Tickets(commands.Cog):
             return await interaction.response.send_message(
                 embed=error("Not a Ticket", "Run this inside a ticket channel."), ephemeral=True
             )
-
         await interaction.channel.set_permissions(
-            member,
-            view_channel=True,
-            send_messages=True,
-            read_message_history=True,
+            member, view_channel=True, send_messages=True, read_message_history=True
         )
         await interaction.response.send_message(
             embed=success("Member Added", f"{member.mention} has been added to this ticket.")
         )
 
-    # ── /ticket remove ────────────────────────────────────────────────────────
     @ticket_group.command(name="remove", description="Remove a member from the current ticket.")
     @app_commands.describe(member="Member to remove")
     @is_mod()
@@ -346,13 +360,11 @@ class Tickets(commands.Cog):
             return await interaction.response.send_message(
                 embed=error("Not a Ticket", "Run this inside a ticket channel."), ephemeral=True
             )
-
         await interaction.channel.set_permissions(member, overwrite=None)
         await interaction.response.send_message(
             embed=success("Member Removed", f"{member.mention} has been removed from this ticket.")
         )
 
-    # ── Error handler ─────────────────────────────────────────────────────────
     async def cog_app_command_error(self, interaction: discord.Interaction, err: app_commands.AppCommandError):
         msg = "You don't have permission." if isinstance(err, app_commands.MissingPermissions) else f"`{err}`"
         if interaction.response.is_done():
