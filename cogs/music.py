@@ -111,8 +111,8 @@ class Music(commands.Cog):
             {"uri": config.LAVALINK_URI,           "password": config.LAVALINK_PASSWORD},
             # Backup nodes (public free nodes)
             {"uri": "http://lavalinkv4.serenetia.com:80",  "password": "https://dsc.gg/ajidevserver"},
-            {"uri": "http://lavalink.clxud.dev:2333",    "password": "youshallnotpass"},
-            {"uri": "http://lavalink.devamop.in:80",     "password": "DevamOP"},
+            {"uri": "http://lavalink.jirayu.net:13592",    "password": "youshallnotpass"},
+            {"uri": "http://lavalink.triniumhost.com:4333",     "password": "free"},
         ]
 
         # Deduplicate in case primary matches a backup
