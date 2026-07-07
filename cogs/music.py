@@ -110,7 +110,7 @@ class Music(commands.Cog):
             # Primary — set via LAVALINK_URI env var
             {"uri": config.LAVALINK_URI,           "password": config.LAVALINK_PASSWORD},
             # Backup nodes (public free nodes)
-            {"uri": "http://lavalink.jirayu.net:13592",  "password": "youshallnotpass"},
+            {"uri": "https://lavalinkv4.serenetia.com:80",  "password": "https://dsc.gg/ajidevserver"},
             {"uri": "http://lavalink.clxud.dev:2333",    "password": "youshallnotpass"},
             {"uri": "http://lavalink.devamop.in:80",     "password": "DevamOP"},
         ]
