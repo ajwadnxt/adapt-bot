@@ -100,8 +100,43 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        nodes = [wavelink.Node(uri=config.LAVALINK_URI, password=config.LAVALINK_PASSWORD)]
-        await wavelink.Pool.connect(nodes=nodes, client=self.bot, cache_capacity=100)
+        """Connect to Lavalink nodes with automatic fallback."""
+        import logging
+        log = logging.getLogger("music")
+
+        # Primary node from config/env vars
+        # Backup nodes tried in order if primary fails
+        node_list = [
+            # Primary — set via LAVALINK_URI env var
+            {"uri": config.LAVALINK_URI,           "password": config.LAVALINK_PASSWORD},
+            # Backup nodes (public free nodes)
+            {"uri": "http://lavalink.jirayu.net:13592",  "password": "youshallnotpass"},
+            {"uri": "http://lavalink.clxud.dev:2333",    "password": "youshallnotpass"},
+            {"uri": "http://lavalink.devamop.in:80",     "password": "DevamOP"},
+        ]
+
+        # Deduplicate in case primary matches a backup
+        seen  = set()
+        nodes = []
+        for n in node_list:
+            key = n["uri"]
+            if key not in seen:
+                seen.add(key)
+                nodes.append(wavelink.Node(uri=n["uri"], password=n["password"]))
+
+        connected = 0
+        for node in nodes:
+            try:
+                await wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100)
+                log.info(f"✅  Connected to Lavalink node: {node.uri}")
+                connected += 1
+            except Exception as e:
+                log.warning(f"⚠️  Could not connect to Lavalink node {node.uri}: {e}")
+
+        if connected == 0:
+            log.error("❌  No Lavalink nodes could be connected. Music will not work.")
+        else:
+            log.info(f"🎵  {connected} Lavalink node(s) connected.")
 
     async def _ensure_voice(self, interaction: discord.Interaction):
         if not interaction.user.voice or not interaction.user.voice.channel:
