@@ -13,7 +13,7 @@ OWNER_IDS: list[int] = [int(i) for i in os.getenv("OWNER_IDS", "").split(",") if
 # ─── Appearance ───────────────────────────────────────────────────────────────
 BOT_NAME    = "Adapt"
 BOT_COLOR   = 0x5990FD
-BOT_VERSION = "2.0.0"
+BOT_VERSION = "2.1.0"
 
 # ─── Lavalink ─────────────────────────────────────────────────────────────────
 # Free public node — swap for your own if you self-host
