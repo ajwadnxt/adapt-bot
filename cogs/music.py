@@ -86,7 +86,7 @@ def now_playing_embed(player: wavelink.Player) -> discord.Embed:
         else "🔁 Queue" if loop_mode == wavelink.QueueMode.loop_all
         else "Off"
     )
-    embed.add_field(name="Queue",   value=f"`{len(player.queue)}` track(s)")
+    embed.add_field(name="Queue", value=f"`{len(player.queue)}` track(s)")
     requester = getattr(track, "requester", None)
     if requester:
         embed.set_footer(text=f"Requested by {requester}")
@@ -100,43 +100,8 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        """Connect to Lavalink nodes with automatic fallback."""
-        import logging
-        log = logging.getLogger("music")
-
-        # Primary node from config/env vars
-        # Backup nodes tried in order if primary fails
-        node_list = [
-            # Primary — set via LAVALINK_URI env var
-            {"uri": config.LAVALINK_URI,           "password": config.LAVALINK_PASSWORD},
-            # Backup nodes (public free nodes)
-            {"uri": "http://lavalinkv4.serenetia.com:80",  "password": "https://dsc.gg/ajidevserver"},
-            {"uri": "http://lavalink.jirayu.net:13592",    "password": "youshallnotpass"},
-            {"uri": "http://lavalink.triniumhost.com:4333",     "password": "free"},
-        ]
-
-        # Deduplicate in case primary matches a backup
-        seen  = set()
-        nodes = []
-        for n in node_list:
-            key = n["uri"]
-            if key not in seen:
-                seen.add(key)
-                nodes.append(wavelink.Node(uri=n["uri"], password=n["password"]))
-
-        connected = 0
-        for node in nodes:
-            try:
-                await wavelink.Pool.connect(nodes=[node], client=self.bot, cache_capacity=100)
-                log.info(f"✅  Connected to Lavalink node: {node.uri}")
-                connected += 1
-            except Exception as e:
-                log.warning(f"⚠️  Could not connect to Lavalink node {node.uri}: {e}")
-
-        if connected == 0:
-            log.error("❌  No Lavalink nodes could be connected. Music will not work.")
-        else:
-            log.info(f"🎵  {connected} Lavalink node(s) connected.")
+        nodes = [wavelink.Node(uri=config.LAVALINK_URI, password=config.LAVALINK_PASSWORD)]
+        await wavelink.Pool.connect(nodes=nodes, client=self.bot, cache_capacity=100)
 
     async def _ensure_voice(self, interaction: discord.Interaction):
         if not interaction.user.voice or not interaction.user.voice.channel:
