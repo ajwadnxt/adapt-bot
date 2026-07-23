@@ -87,7 +87,7 @@ class Invites(commands.Cog):
         """Track when an invited member leaves (for accurate invite counts)."""
         pool = get_pool()
         await pool.execute(
-            "UPDATE invite_tracker SET "left"=TRUE WHERE guild_id=$1 AND invitee_id=$2",
+            "UPDATE invite_tracker SET is_left=TRUE WHERE guild_id=$1 AND invitee_id=$2",
             member.guild.id, member.id,
         )
 
