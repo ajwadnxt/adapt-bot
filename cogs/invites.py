@@ -25,7 +25,7 @@ class Invites(commands.Cog):
 
     async def _cache_guild(self, guild: discord.Guild):
         try:
-            invites = await guild.fetch_invites()
+            invites = await guild.invites()
             self._cache[guild.id] = {inv.code: inv for inv in invites}
         except (discord.Forbidden, discord.HTTPException):
             self._cache[guild.id] = {}
@@ -58,7 +58,7 @@ class Invites(commands.Cog):
         used_code  = None
 
         try:
-            new_invites = await guild.fetch_invites()
+            new_invites = await guild.invites()
             new_cache   = {inv.code: inv for inv in new_invites}
 
             for code, inv in new_cache.items():
@@ -134,7 +134,7 @@ class Invites(commands.Cog):
 
         # Get current Discord invite uses
         try:
-            guild_invites = await interaction.guild.fetch_invites()
+            guild_invites = await interaction.guild.invites()
             discord_uses  = sum(inv.uses or 0 for inv in guild_invites if inv.inviter and inv.inviter.id == target.id)
         except discord.Forbidden:
             discord_uses = 0
@@ -189,7 +189,7 @@ class Invites(commands.Cog):
     @is_admin()
     async def invite_list(self, interaction: discord.Interaction):
         try:
-            invites = await interaction.guild.fetch_invites()
+            invites = await interaction.guild.invites()
         except discord.Forbidden:
             return await interaction.response.send_message(
                 embed=error("Missing Permission", "I need Manage Guild permission to view invites."), ephemeral=True
